@@ -15,7 +15,7 @@ import pickle as pkl
 ##---------------------------------------------##
 
 def ApplyCut(inMC, cut="OscNext"):
-
+    HE_cut = 1000.
     # Applying cuts
     if cut == "Default":
         loc = np.where((inMC["L7OscNext_bool"]==1) &
@@ -30,7 +30,7 @@ def ApplyCut(inMC, cut="OscNext"):
                        (inMC["L7_ntop15"]<2.5) &
                        (inMC["L7_nouter"]<7.5) &
                        (inMC["L7reco_time"]<14500.) 
-                        # &(inMC["true_Energy"]<=HE_cut)
+                        &(inMC["true_Energy"]<=HE_cut)
                         )
 
     # Output: samples of particle types, true E,  true psi; PID, reco_E, reco_psi and weights
@@ -54,20 +54,18 @@ def ApplyCut(inMC, cut="OscNext"):
     return output_dict
 
 
-
-def ExtractMC():
+def ExtractMC(sampleid):
+    Simdir="/data/user/tchau/DarkMatter_OscNext/Sample/Simulation"
     # Extract Simulation file:
-    Sim12 = pkl.load(open("../Sample/Simulation/OscNext_Level7_v02.00_120000_pass2_variables_NoCut.pkl", "rb"))
-    Sim14 = pkl.load(open("../Sample/Simulation/OscNext_Level7_v02.00_140000_pass2_variables_NoCut.pkl", "rb"))
-    Sim16 = pkl.load(open("../Sample/Simulation/OscNext_Level7_v02.00_160000_pass2_variables_NoCut.pkl", "rb"))
-    # Sim = [Sim12['120000'], Sim14['140000'], Sim16['160000']]
-
-    Cut = [ApplyCut(Sim12['120000']), ApplyCut(Sim14['140000']), ApplyCut(Sim16['160000'])]
+    Cut = dict()
+    for sample in sampleid:
+        Sim = pkl.load(open("{}/OscNext_Level7_v02.00_{}_pass2_variables_NoCut.pkl".format(Simdir, sample), "rb"))
+        Cut[sample] = ApplyCut(Sim[sample])
     MCcut = dict()
-    for key in Cut[0].keys():
+    for key in Cut[sample].keys():
         MCcut[key] = np.array([])
-        for c in Cut:
-            MCcut[key] = np.concatenate((MCcut[key], c[key]), axis=None) 
+        for sample in sampleid:
+            MCcut[key] = np.concatenate((MCcut[key], Cut[sample][key]), axis=None) 
 
     return MCcut
 
@@ -148,9 +146,9 @@ def EnergyResolution(MCdict, bin, KDE=False):
     Etrue = MCdict["E_true"]
     Ereco = MCdict["E_reco"]
     Ntot = len(Etrue)
-    H, v0_edges, v1_edges, v2_edges = np.histogramdd((psitrue, Etrue, Ereco),
+    H = np.histogramdd((psitrue, Etrue, Ereco),
                                            bins = (truepsi_edges, trueenergy_edges, recoenergy_edges))
-    Resolution = H/Ntot
+    Resolution = H[0]/Ntot
     return Resolution
 
 

@@ -10,7 +10,6 @@ import scipy
 from scipy import interpolate
 from scipy.interpolate import pchip_interpolate
 
-
 # cut low values to zero
 def cutspectra(spec, cut):
     for flv in ["nu_e", "nu_mu", "nu_tau"]:
@@ -38,77 +37,6 @@ def Interpolate_Jfactor(inpath, psival):
     interp_Jpsi = scipy.interpolate.splev(psival, y_interp, der=0)
 
     return interp_Jpsi
-
-
-
-##---------------------------------------------##
-##Interpolate the Spectra at the energy values used in response functions
-##Required:
-##  -  Precomputed Spectra file (may be change to directly computed for Charon?)
-##  -  energy values for interpolation
-##Output:
-##  -  Interpolated spectra
-##---------------------------------------------##
-# def Interpolate_Spectra(inpath, Eval, channel, mass):
-#     spectra_file = pickle.load(open(inpath,"rb"))
-
-#     #Different treatment of nu and anti-nu spectra
-#     if "PPPC4" in inpath:
-#         #No distinction is made between neutrinos and anti-neutrinos in PPPC4 tables
-#         nu_types = ["nu_e", "nu_mu", "nu_tau"]
-#         pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16}
-#     elif "Charon" in inpath:
-#         #Charon can compute separately nu and anitnu but they seems to be the same in case of Galactic Center
-#         nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-#         pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
-
-#     #Define array holding interpolated values of spectra
-#     interp_dNdE = dict()
-
-#     for nu_type in nu_types:
-
-#         #Energy
-#         spectra_E = np.array(spectra_file[channel][str(mass)][nu_type]["E"])
-#         #Spectra
-#         spectra_dNdE = np.array(spectra_file[channel][str(mass)][nu_type]["dNdE"])
-
-#         #print ("Energy to interpolate:", spectra_E)
-#         #print ("Spectra to interpolate:", min(spectra_dNdE), max(spectra_dNdE))
-
-#         #Define low energy and high energy cut for interpolation
-#         #Check if there is zero in spectra (for nunu) and define interpolation cuts accordingly
-#         HE_cut = mass
-#         zeroes = np.where(spectra_dNdE == 0.)
-#         if zeroes != np.array([]):
-#             LE_cut = min(spectra_E[np.where(spectra_dNdE!=0.)])+(0.01*HE_cut)
-#         else:
-#             LE_cut = min(spectra_E)
-#         LE_cut = 0.
-#         print("Energy cut for {}".format(nu_type))
-#         print(LE_cut)
-#         print(HE_cut)
-#         #print ( "Energy range for interpolation:[{},{}]".format(str(LE_cut),str(HE_cut)) )
-#         #print ( "Real interpolation range: [{},{}]".format(str(min(spectra_E)),str(max(spectra_E))) )
-
-#         #Define fct from which interpolate from
-#         y_interp = scipy.interpolate.splrep(spectra_E, spectra_dNdE)
-
-#         zeros = np.zeros(len(Eval))
-#         #Actually interpolate the spectra for our energy array
-#         #Only interpolate for the proper nu_type & above the energy threshold of the spectra
-#         interp_dNdE[nu_type] = np.where((Eval>=LE_cut) & (Eval<=HE_cut),
-#                                scipy.interpolate.splev(Eval, y_interp, der=0), zeros)
-
-
-#         #Get rid of negative spectra values due to poor interpolation
-#         while len(Eval[np.where(interp_dNdE[nu_type]<0)]) != 0:
-#             neg_v = np.where(interp_dNdE[nu_type]<0)[0]
-#             interp_dNdE[nu_type][neg_v] = interp_dNdE[nu_type][neg_v-1]
-
-#         print ("Negative values in spectra:", np.where(interp_dNdE[nu_type]<0)[0])
-
-#     return interp_dNdE
 
 
 def Interpolate_Spectra(inpath, Eval, channel, mass):
@@ -311,3 +239,73 @@ def DetectedRate_allstep(PathSpectra, PathJfactor, channel, mass):
 
     return PDF
 
+
+
+##---------------------------------------------##
+##Interpolate the Spectra at the energy values used in response functions
+##Required:
+##  -  Precomputed Spectra file (may be change to directly computed for Charon?)
+##  -  energy values for interpolation
+##Output:
+##  -  Interpolated spectra
+##---------------------------------------------##
+# def Interpolate_Spectra(inpath, Eval, channel, mass):
+#     spectra_file = pickle.load(open(inpath,"rb"))
+
+#     #Different treatment of nu and anti-nu spectra
+#     if "PPPC4" in inpath:
+#         #No distinction is made between neutrinos and anti-neutrinos in PPPC4 tables
+#         nu_types = ["nu_e", "nu_mu", "nu_tau"]
+#         pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16}
+#     elif "Charon" in inpath:
+#         #Charon can compute separately nu and anitnu but they seems to be the same in case of Galactic Center
+#         nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
+#         pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
+
+
+#     #Define array holding interpolated values of spectra
+#     interp_dNdE = dict()
+
+#     for nu_type in nu_types:
+
+#         #Energy
+#         spectra_E = np.array(spectra_file[channel][str(mass)][nu_type]["E"])
+#         #Spectra
+#         spectra_dNdE = np.array(spectra_file[channel][str(mass)][nu_type]["dNdE"])
+
+#         #print ("Energy to interpolate:", spectra_E)
+#         #print ("Spectra to interpolate:", min(spectra_dNdE), max(spectra_dNdE))
+
+#         #Define low energy and high energy cut for interpolation
+#         #Check if there is zero in spectra (for nunu) and define interpolation cuts accordingly
+#         HE_cut = mass
+#         zeroes = np.where(spectra_dNdE == 0.)
+#         if zeroes != np.array([]):
+#             LE_cut = min(spectra_E[np.where(spectra_dNdE!=0.)])+(0.01*HE_cut)
+#         else:
+#             LE_cut = min(spectra_E)
+#         LE_cut = 0.
+#         print("Energy cut for {}".format(nu_type))
+#         print(LE_cut)
+#         print(HE_cut)
+#         #print ( "Energy range for interpolation:[{},{}]".format(str(LE_cut),str(HE_cut)) )
+#         #print ( "Real interpolation range: [{},{}]".format(str(min(spectra_E)),str(max(spectra_E))) )
+
+#         #Define fct from which interpolate from
+#         y_interp = scipy.interpolate.splrep(spectra_E, spectra_dNdE)
+
+#         zeros = np.zeros(len(Eval))
+#         #Actually interpolate the spectra for our energy array
+#         #Only interpolate for the proper nu_type & above the energy threshold of the spectra
+#         interp_dNdE[nu_type] = np.where((Eval>=LE_cut) & (Eval<=HE_cut),
+#                                scipy.interpolate.splev(Eval, y_interp, der=0), zeros)
+
+
+#         #Get rid of negative spectra values due to poor interpolation
+#         while len(Eval[np.where(interp_dNdE[nu_type]<0)]) != 0:
+#             neg_v = np.where(interp_dNdE[nu_type]<0)[0]
+#             interp_dNdE[nu_type][neg_v] = interp_dNdE[nu_type][neg_v-1]
+
+#         print ("Negative values in spectra:", np.where(interp_dNdE[nu_type]<0)[0])
+
+#     return interp_dNdE
