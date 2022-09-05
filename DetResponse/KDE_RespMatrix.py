@@ -13,21 +13,6 @@ from kde.pykde import gaussian_kde
 from sklearn.neighbors import KernelDensity
 
 
-
-#----------------------------------------------------------------------------------------------------------------------
-#Define parameters needed
-#----------------------------------------------------------------------------------------------------------------------
-
-parser = OptionParser()
-# i/o options
-parser.add_option("-b", "--bw", type = "string", action = "store", default = "None", metavar  = "<PDFtype>", help = "Bandwith method",)
-parser.add_option("-m", "--method", type = "string", action = "store", default = "None", metavar  = "<cutvalue>", help = "kde Package to use: sklearn or kde",)
-
-(options, args) = parser.parse_args()
-
-bw = options.bw
-method = options.method
-
 def kde_icecube(x, x_grid, bandwidth=0.03, **kwargs):
     """Kernel Density Estimation with icecube package"""
 
@@ -60,80 +45,93 @@ def kde_sklearn(x, x_grid, bandwidth=0.03, weight=0, **kwargs):
     # return kde_skl    
 
 
-def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde"):
+def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde", nu_type="nu_e", pid=0):
     # Separate MC by each channel nutype->PID:
     # nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    nu_types = ["nu_e"]
 
     pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-    # PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
-    PID = [[0.,0.5]]
+    PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
 
-    pid_id = 0
     Resp = dict()
-    pidbin = 0
-    for pid in PID:
-        print("Computing {} PID bin".format(pid))
-        Resp[pidbin] = dict()
-        pidbin += 1
-        for nu_type in nu_types:
-            print("----{}".format(nu_type))
+    print("Computing {} PID bin".format(pid))
+    Resp[pid] = dict()
+    print("----{}".format(nu_type))
 
-            loc = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type]) & (MCcut["PID"]>=pid[0])
-                            & (MCcut["PID"]<pid[1]) )
+    loc = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type]) & (MCcut["PID"]>=PID[pid][0])
+                    & (MCcut["PID"]<PID[pid][1]) )
+
+    #Extract MC events: 
+    #NOTE: input psi in deg!
+    psitrue = MCcut["psi_true"][loc]
+    Etrue = MCcut["E_true"][loc]
+    psireco = MCcut["psi_reco"][loc]
+    Ereco = MCcut["E_reco"][loc]
+    w = MCcut["w"][loc]
         
-            #Extract MC events: 
-            #NOTE: input psi in deg!
-            psitrue = MCcut["psi_true"][loc]
-            Etrue = MCcut["E_true"][loc]
-            psireco = MCcut["psi_reco"][loc]
-            Ereco = MCcut["E_reco"][loc]
-            w = MCcut["w"][loc]
-                
-            psiE_train = np.vstack([np.log(psitrue), Etrue, np.log(psireco), np.log10(Ereco)])
-            
-            #Evaluate points:
-            ##Equal spacing in the final variables: reco Psi & log10(E), true psi and true E
-            trueEeval = Bin["true_energy_center"]
-            truePsieval = Bin["true_psi_center"]
-            recoEeval = Bin["reco_energy_center"]
-            recoPsieval = Bin["reco_psi_center"]
+    psiE_train = np.vstack([np.log(psitrue), Etrue, np.log(psireco), np.log10(Ereco)])
+    
+    #Evaluate points:
+    ##Equal spacing in the final variables: reco Psi & log10(E), true psi and true E
+    trueEeval = Bin["true_energy_center"]
+    truePsieval = Bin["true_psi_center"]
+    recoEeval = Bin["reco_energy_center"]
+    recoPsieval = Bin["reco_psi_center"]
 
-            g_psi_true, g_energy_true, g_psi_reco, g_energy_reco = np.meshgrid(truePsieval, trueEeval,
-                                                                    recoPsieval, recoEeval)                      
-            psi_eval_true = g_psi_true.T.flatten()
-            E_eval_true = g_energy_true.T.flatten()
-            psi_eval_reco = g_psi_reco.T.flatten()
-            E_eval_reco = g_energy_reco.T.flatten()
+    g_psi_true, g_energy_true, g_psi_reco, g_energy_reco = np.meshgrid(truePsieval, trueEeval,
+                                                            recoPsieval, recoEeval)                      
+    psi_eval_true = g_psi_true.T.flatten()
+    E_eval_true = g_energy_true.T.flatten()
+    psi_eval_reco = g_psi_reco.T.flatten()
+    E_eval_reco = g_energy_reco.T.flatten()
 
-            ##Evaluate the KDE in log(Psi)-log10E
-            psiE_eval = np.vstack([np.log(psi_eval_true), np.log(E_eval_true), 
-                                np.log(psi_eval_reco), np.log10(E_eval_reco)])
-            print("Evaluating KDE.....")    
-            if method=="sklearn":
-                kde_w = kde_sklearn(psiE_train.T, psiE_eval.T, bandwidth=bw_method, weight=w)
-                #Needs to be divided by evaluation angle
-                kde_weight = kde_w.reshape(psi_eval_true.shape)/(psi_eval_true* psi_eval_reco* E_eval_true)
-            else:
-                kde_w = kde_icecube(psiE_train, psiE_eval, bandwidth=bw_method, weights=w)
-                #Needs to be divided by evaluation angle
-                kde_weight = kde_w/(psi_eval_true* psi_eval_reco* E_eval_true)
+    ##Evaluate the KDE in log(Psi)-log10E
+    psiE_eval = np.vstack([np.log(psi_eval_true), np.log(E_eval_true), 
+                        np.log(psi_eval_reco), np.log10(E_eval_reco)])
+    print("Evaluating KDE.....")    
+    if method=="sklearn":
+        kde_w = kde_sklearn(psiE_train.T, psiE_eval.T, bandwidth=bw_method, weight=w)
+        #Needs to be divided by evaluation angle
+        kde_weight = kde_w.reshape(psi_eval_true.shape)/(psi_eval_true* psi_eval_reco* E_eval_true)
+    else:
+        kde_w = kde_icecube(psiE_train, psiE_eval, bandwidth=bw_method, weights=w)
+        #Needs to be divided by evaluation angle
+        kde_weight = kde_w/(psi_eval_true* psi_eval_reco* E_eval_true)
 
-            # Fill into histogram:
-            Psitrue_edges = Bin["true_psi_edges"]
-            Etrue_edges = Bin["true_energy_edges"]
-            Psireco_edges = Bin["reco_psi_edges"]
-            Ereco_edges = Bin["reco_energy_edges"]
+    # Fill into histogram:
+    Psitrue_edges = Bin["true_psi_edges"]
+    Etrue_edges = Bin["true_energy_edges"]
+    Psireco_edges = Bin["reco_psi_edges"]
+    Ereco_edges = Bin["reco_energy_edges"]
 
-            H, edges = np.histogramdd((psi_eval_true, E_eval_true, psi_eval_reco, E_eval_reco),
-                                        bins = (Psitrue_edges, Etrue_edges, Psireco_edges, Ereco_edges),
-                                        weights=kde_weight)
-            Resp[pid][nu_type] = H
+    H, edges = np.histogramdd((psi_eval_true, E_eval_true, psi_eval_reco, E_eval_reco),
+                                bins = (Psitrue_edges, Etrue_edges, Psireco_edges, Ereco_edges),
+                                weights=kde_weight)
+    Resp[pid][nu_type] = H
     return Resp                 
 
 
+#----------------------------------------------------------------------------------------------------------------------
+#Define parameters needed
+#----------------------------------------------------------------------------------------------------------------------
+
+parser = OptionParser()
+# i/o options
+parser.add_option("-b", "--bw", type = "string", action = "store", default = "None", metavar  = "<Bandwidth>", help = "Bandwith method: scalar, scott, adaptive",)
+parser.add_option("-m", "--method", type = "string", action = "store", default = "None", metavar  = "<package>", help = "kde Package to use: sklearn or kde",)
+parser.add_option("-p", "--pid", type = int, action = "store", default = 0, metavar  = "<pid>", help = "which pid bin: 0(showers), 1(middles), 2(tracks)",)
+parser.add_option("-n", "--nutype", type = "string", action = "store", default = "None", metavar  = "<nutype>", help = "which nutype: nu_e, nu_mu, nu_tau, nu_e_bar, nu_mu_bar, nu_tau_bar",)
+
+(options, args) = parser.parse_args()
+
+bw = options.bw
+method = options.method
+pid = options.pid
+nutype = options.nutype
+
 # Extract the MC:
-MC = ExtractMC()
+pdg = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
+set = "{}0000".format(abs(pdg[nutype]))
+MC = ExtractMC([set])
 # Create binning:
 # mass: true binning depends on the DM mass
 mass = 1000
@@ -163,10 +161,10 @@ Bin = GroupBinning(Etrue_edges, Psitrue_edges, Etrue_center, Psitrue_center,
                 Ereco_edges, Psireco_edges, Ereco_center, Psireco_center, PID_edges, PID_center)
 
 
-Resp = KDE_RespMatrix(MC, Bin, bw, method)
+Resp = KDE_RespMatrix(MC, Bin, bw, method, nu_type=nutype, pid=pid)
 
 output = dict()
 output["Resp"] = Resp
 output["Bin"] = Bin
-outfile = "/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/RespMatrix_{}_bw{}.pkl".format(method, bw)
+outfile = "/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/RespMatrix_{}_bw{}_{}_pid{}.pkl".format(method, bw, nutype, pid)
 pkl.dump(output, open(outfile, "wb"))
