@@ -75,6 +75,9 @@ def Interpolate_Spectra(inpath, Eval, channel, mass):
             #Only interpolate for the proper nu_type & above the energy threshold of the spectra
             neg_v = np.where(interp_dNdE[nu_type]<1e-5)[0]
             interp_dNdE[nu_type][neg_v] = 0.
+        # put to zero for energy > mass
+        loc = np.where(Eval>mass)
+        interp_dNdE[nu_type][loc] = 0.
 
     if "PPPC4" in inpath: # in PPPC4 nu and nubar is the same so we just duplicate here
         interp_dNdE["nu_e_bar"] = interp_dNdE["nu_e"]
@@ -132,7 +135,9 @@ def DetectedRate_withRespMatrix(TrueRate, RespMatrix):
     # TrueRate[psi][E] * ResponseMatrix[truePsi][trueE][PID][recoPsi][recoE]] sum on true E and psi
     # -> output: DetectedRate 
     DetectedRate_bynutype = dict()
-    for nu_type in TrueRate.keys():
+    for nu_type in RespMatrix.keys():
+        if nu_type == 'Bin':
+            continue
         DetectedRate_bynutype[nu_type] = np.tensordot(TrueRate[nu_type], RespMatrix[nu_type], 
                                                     axes=([0,1], [0,1]))
         # -> output as Rate[nu_type][PID][recoPsi][recoE]
@@ -176,7 +181,8 @@ def DetectedRate_evtbyevt(MCdict, SpectraPath, JfactorPath, channel, mass, bin):
 
     for nu_type in nu_types:
         loc = np.where( (MCdict["E_true"]<=mass) & (MCdict["nutype"]==pdg_encoding[nu_type]) )
-
+        if len(loc[0])==0:
+            continue
         ##Sort all variables by increasing true_E values##
         ##NOTE: this is required for spectra interpolation
         # sort = MCdict["E_true"][loc].argsort()
@@ -218,6 +224,63 @@ def DetectedRate_evtbyevt(MCdict, SpectraPath, JfactorPath, channel, mass, bin):
                             weights=signal_w)
     sum_w = np.sum(signal_w)
     return H[0]/sum_w
+
+
+def DetectedRate_evtbyevt_nopid(MCdict, SpectraPath, JfactorPath, channel, mass, bin):
+
+    nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
+    pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
+
+    #PDF_variables
+    array_recopsi = np.array([])
+    array_recoE = np.array([])
+    signal_w = np.array([])
+
+    for nu_type in nu_types:
+        loc = np.where( (MCdict["E_true"]<=mass) & (MCdict["nutype"]==pdg_encoding[nu_type]) )
+        if len(loc[0])==0:
+            continue
+        ##Sort all variables by increasing true_E values##
+        ##NOTE: this is required for spectra interpolation
+        # sort = MCdict["E_true"][loc].argsort()
+
+        ##Simulation weight##
+        genie_w = MCdict["w"][loc]
+
+        ##Spectra interpolation##
+        true_E = MCdict["E_true"][loc]
+        dNdE = Interpolate_Spectra(SpectraPath, true_E, channel, mass)
+        # print ("True_E first & last elements:", true_E[0], true_E[-1])
+        # print ("True_E min & max:", min(true_E), max(true_E))
+        # print ("Negative dNdE values:", np.where(dNdE<0)[0])
+
+        ##Jfactor interpolation##
+        #NOTE: input psi in deg!
+        true_psi = MCdict["psi_true"][loc]
+        Jpsi = Interpolate_Jfactor(JfactorPath, true_psi)
+        # print ("True_psi min & max:", min(true_psi), max(true_psi))
+
+        ##Signal weight##
+        weight = (1./(2 * 4*math.pi * mass**2)) * genie_w * dNdE[nu_type] * Jpsi
+        # print ("Len(weight):",len(weight))
+
+        ##Reco variables:
+        reco_psi = MCdict["psi_reco"][loc]
+        reco_E = MCdict["E_reco"][loc]
+        PID = MCdict["PID"][loc]
+
+        ##group all nutype:
+        array_recopsi = np.append(array_recopsi, reco_psi)
+        array_recoE = np.append(array_recoE, reco_E)
+        signal_w = np.append(signal_w, weight)
+
+    ##put into histogram:
+    H = np.histogramdd((array_recopsi, array_recoE), 
+                            bins=(bin['reco_psi_edges'], bin['reco_energy_edges']),
+                            weights=signal_w)
+    sum_w = np.sum(signal_w)
+    return H[0]/sum_w
+
 
 
 

@@ -1,9 +1,7 @@
 
-from cProfile import label
-import math
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import matplotlib as mpl
+import matplotlib as plt
 import matplotlib.gridspec as gridspec
 
 #Graphical options
@@ -16,7 +14,7 @@ from matplotlib.offsetbox import AnchoredText
 
 
 
-def plot_2DHist(H, axis_edges, x_label, y_label, title, norm=None):
+def plot_2DHist(H, axis_edges, x_label, y_label, title, min=None, norm=None):
 
     fig = plt.figure(figsize=(10,10), dpi = 80)
     ax = plt.subplot(111)
@@ -28,8 +26,8 @@ def plot_2DHist(H, axis_edges, x_label, y_label, title, norm=None):
     yedges = axis_edges[1]
     extent = [xedges[0], xedges[-1], yedges[-1], yedges[0]]
     Xaxis, Yaxis = np.meshgrid(yedges,xedges)
-    i = ax.pcolor(Yaxis, Xaxis, H, cmap=colormap) 
-                #,    norm=colors.Normalize(vmin=0.0000, vmax=norm))
+    i = ax.pcolor(Yaxis, Xaxis, H, cmap=colormap
+            ,norm=colors.Normalize(vmin=min, vmax=norm))
     
     ax.set_xlabel(x_label, fontsize=36)
     ax.set_ylabel(y_label, fontsize=36)
@@ -58,7 +56,7 @@ def plot_2DHist(H, axis_edges, x_label, y_label, title, norm=None):
     plt.show()
     
     
-def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None):
+def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None, zlogscale=False):
 
     # Define size of figure
     fig = plt.figure(figsize=(20, 15))
@@ -76,8 +74,12 @@ def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None
     yedges = axis_edges[1]
     extent = [xedges[0], xedges[-1], yedges[-1], yedges[0]]
     Xaxis, Yaxis = np.meshgrid(yedges,xedges)
-    i = ax0.pcolor(Yaxis, Xaxis, H, cmap=colormap
-                   ,norm=colors.Normalize(vmin=min, vmax=norm))
+    if (zlogscale==False):
+        i = ax0.pcolor(Yaxis, Xaxis, H, cmap=colormap
+                    ,norm=colors.Normalize(vmin=min, vmax=norm))
+    else:
+        i = ax0.pcolor(Yaxis, Xaxis, H, cmap=colormap
+            ,norm=colors.LogNorm(vmin=min, vmax=norm))                
     #Legend
     Afont = {'family': 'DejaVu Sans',
              #'backgroundcolor': 'white',
@@ -114,6 +116,9 @@ def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None
     axx.tick_params(axis='both', which='minor', labelsize=22)
     axy.tick_params(axis='both', which='minor', labelsize=22)
 
+    if(zlogscale):
+        axx.semilogy()
+        axy.semilogx()
 
     divider = make_axes_locatable(ax0)
     cax = divider.append_axes("right", size="3.5%", pad=0.05)
@@ -248,3 +253,108 @@ def Plot2D_sidebyside_diff(H1, H2, Edges, title1="this", title2="that"):
             #Color bar
             cax = divider.append_axes("right", size="3.5%", pad=0.05)
             fig.colorbar(im, cax=cax)
+
+def Plot2D_sidebyside_noPID(H1, H2, Edges, title1="this", title2="that"):
+    colormap= plt.cm.viridis #"jet" #
+
+    E, psi = np.meshgrid(Edges[1], Edges[0])
+
+
+    # Plot scramble and MC side by side per each PID bin
+    fig, axs = plt.subplots(1, 2)
+
+    pdf = [H1, H2]
+
+    plt.rcParams['figure.figsize'] = [20, 8]
+
+    for j in range(2):
+        im=axs[j].pcolor(psi, E, pdf[j], cmap=colormap)
+                # , norm=colors.Normalize(vmin=0.0000, vmax=None))
+        divider = make_axes_locatable(axs[j])
+
+        if j==0:
+            title = f"{title1}"
+        else:
+            title = f"{title2}"
+    
+        #Legend
+        Afont = {'family': 'DejaVu Sans',
+                #'backgroundcolor': 'white',
+                'color':  'white',
+                'weight': 'bold',
+                'size': 10,
+                }
+        anchored_text = AnchoredText(title, loc=2, frameon=False, prop=Afont)
+        axs[j].add_artist(anchored_text)
+
+        #Color bar
+        cax = divider.append_axes("right", size="3.5%", pad=0.05)
+        fig.colorbar(im, cax=cax)
+
+
+def plot_Resolution(H, pointx, pointy, axis_edges, x_label, y_label, title, norm=None, min=None):
+
+    # Define size of figure
+    fig = plt.figure(figsize=(20, 15))
+    gs = gridspec.GridSpec(10, 12)
+    
+    # Define the positions of the subplots.
+    ax0 = plt.subplot(gs[6:10, 5:9])
+    axx = plt.subplot(gs[5:6, 5:9])
+    axy = plt.subplot(gs[6:10, 9:10])
+
+    colormap = plt.cm.viridis #"jet" #
+    
+    #Main plot
+    xedges = axis_edges[0]
+    yedges = axis_edges[1]
+    extent = [xedges[0], xedges[-1], yedges[-1], yedges[0]]
+    Xaxis, Yaxis = np.meshgrid(yedges,xedges)
+    i = ax0.pcolor(Yaxis, Xaxis, H, cmap=colormap
+                   ,norm=colors.Normalize(vmin=min, vmax=norm))
+    ax0.plot(pointx, pointy, marker='+', color='red')               
+    #Legend
+    Afont = {'family': 'DejaVu Sans',
+             #'backgroundcolor': 'white',
+             'color':  'white',
+             'weight': 'bold',
+             'size': 22,
+            }
+    anchored_text = AnchoredText(title, loc=2, frameon=False, prop=Afont)
+    ax0.add_artist(anchored_text)
+
+    #Projected histograms inx and y
+    hx, hy = H.T.sum(axis=0), H.T.sum(axis=1)
+    #Top projection
+    axx_lim = ax0.get_xlim()
+    axx_mid = (xedges[1:] + xedges[:-1])/2.
+    axx_width = (xedges[1:] - xedges[:-1])
+    axx.bar(axx_mid, hx, align='center', width=axx_width, color='#404387',edgecolor='white',linewidth=0.5)
+    axx.set_xlim(axx_lim)
+    axx.grid(color='silver', linestyle='-', linewidth=0.2)
+    #Right projection
+    axy_lim = ax0.get_ylim()
+    axy_mid = (yedges[1:] + yedges[:-1])/2.
+    axy_width = (yedges[1:] - yedges[:-1])
+    axy.barh(axy_mid, hy, height=axy_width, align='center', color='#404387',edgecolor='white',linewidth=0.5)
+    axy.set_ylim(axy_lim)
+    axy.grid(color='silver', linestyle='-', linewidth=0.2)
+    
+    #Axis labels
+    ax0.set_xlabel(x_label, fontsize=22)
+    ax0.set_ylabel(y_label, fontsize=22)
+    ax0.tick_params(axis='both', which='minor', labelsize=22)
+    # ax0.tick_params(labelrotation=45)
+    axy.tick_params(axis='x',rotation=90)
+    axx.tick_params(axis='both', which='minor', labelsize=22)
+    axy.tick_params(axis='both', which='minor', labelsize=22)
+
+
+    divider = make_axes_locatable(ax0)
+    cax = divider.append_axes("right", size="3.5%", pad=0.05)
+    
+    cbar = fig.colorbar(i, cax=cax)
+    cbar.ax.set_title('Density', fontsize=14, loc='left')
+    #cax.set_ylabel('Density')
+    fig.tight_layout()
+    plt.show()

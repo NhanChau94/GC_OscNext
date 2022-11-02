@@ -4,7 +4,9 @@ Making the detector response functions (eff area, resolution function and PID pr
 """
 import numpy as np
 import pickle as pkl
-
+import sys
+sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
+from Utils import *
 ##---------------------------------------------##
 ##Load the MC dictionnary and applied cut
 ##Required:
@@ -15,7 +17,7 @@ import pickle as pkl
 ##---------------------------------------------##
 
 def ApplyCut(inMC, cut="OscNext"):
-    HE_cut = 1000.
+    HE_cut = 9000.
     # Applying cuts
     if cut == "Default":
         loc = np.where((inMC["L7OscNext_bool"]==1) &
@@ -33,7 +35,7 @@ def ApplyCut(inMC, cut="OscNext"):
                         &(inMC["true_Energy"]<=HE_cut)
                         )
 
-    # Output: samples of particle types, true E,  true psi; PID, reco_E, reco_psi and weights
+    # Output: samples of: particle types, true E,  true psi; PID, reco_E, reco_psi, RA, DEC, Solid Angle and weights
     output_dict = dict()
     output_dict["nutype"] = inMC["PDG_encoding"][loc]
     output_dict["E_true"] = inMC["true_Energy"][loc]
@@ -41,6 +43,14 @@ def ApplyCut(inMC, cut="OscNext"):
     output_dict["psi_true"] = np.rad2deg(inMC["true_psi"][loc])
     output_dict["psi_reco"] = np.rad2deg(inMC["reco_psi"][loc])
     output_dict["PID"] = inMC["PID"][loc]
+    output_dict["Dec_true"] = inMC["true_Dec"][loc]
+    output_dict["RA_true"] = inMC["true_RA"][loc]
+    output_dict["Dec_reco"] = inMC["reco_Dec"][loc]
+    output_dict["RA_reco"] = inMC["reco_RA"][loc]
+    # output_dict["SA_true"] = 2* np.pi *(1-np.cos(np.deg2rad["psi_true"]))
+    # output_dict["SA_reco"] = 2* np.pi *(1-np.cos(np.deg2rad["psi_reco"]))
+
+
 
     # weight
     OW = inMC["OneWeight"][loc]
@@ -50,7 +60,7 @@ def ApplyCut(inMC, cut="OscNext"):
     genie_w = OW * (1./ratio) * (1./(NEvents*NFiles))
 
     output_dict["w"] = genie_w
-
+    output_dict["oneweight"] = inMC["OneWeight"][loc]
     return output_dict
 
 
@@ -98,6 +108,42 @@ def GroupBinning(true_energy_edges, true_psi_edges, true_energy_center, true_psi
 
     return Bin
 
+def Std_Binning(mass):
+
+    # Binning:
+    # E true
+    N_Etrue = 100
+    Etrue_center = np.array(np.linspace(1., mass, N_Etrue))
+    Ewidth = (mass-1.)/(N_Etrue-1.)
+    Etrue_edges = np.array([E - Ewidth/2. for E in Etrue_center])
+    Etrue_edges = np.append(Etrue_edges, Etrue_center[-1] + Ewidth/2.)
+    # Psi true
+    N_psitrue = 50
+    Psitrue_edges = np.linspace(0., 180., N_psitrue+1)
+    Psiwidth = 180./N_psitrue
+    Psitrue_center = np.array([Psitrue_edges[i]+Psiwidth/2. for i in range(len(Psitrue_edges)-1)])
+    # Psitrue_center = np.exp(np.linspace(np.log(0.005), np.log(180), 3* N_psitrue))
+
+    # E reco
+    Ereco_edges = pow(10., np.linspace(np.log10(1.), np.log10(1e3), 50+1))
+    Ereco_center = np.array([np.sqrt(Ereco_edges[i]*Ereco_edges[i+1]) for i in range(len(Ereco_edges) - 1)])
+
+
+    # Psi reco
+    N_psireco = 18
+    Psireco_edges = np.linspace(0., 180., N_psireco+1)
+    Psireco_center = np.array( [(Psireco_edges[i]+Psireco_edges[i+1])/2. for i in range(len(Psireco_edges)-1)] )
+    # Psireco_center = np.exp(np.linspace(np.log(0.005), np.log(180), 3* N_psireco))
+
+
+    # PID
+    PID_edges = np.array([0.,0.5,0.85,1.])
+    PID_center = np.array( [(PID_edges[i]+PID_edges[i+1])/2. for i in range(len(PID_edges)-1)] )
+
+    Bin = GroupBinning(Etrue_edges, Psitrue_edges, Etrue_center, Psitrue_center,
+                    Ereco_edges, Psireco_edges, Ereco_center, Psireco_center, PID_edges, PID_center)
+
+    return Bin
 
 ##---------------------------------------------##
 ##Compute effective area
@@ -282,3 +328,32 @@ def MakeResponseMatrix(MCcut, bin, outfile, KDE=False):
         RespMatrix[nu_type] = np.array(Resp[0])                                    
     pkl.dump(RespMatrix, open(outfile, "wb"))                                        
     return RespMatrix
+
+
+##---------------------------------------------##
+##Interpolate a precomputed detector response
+##Required:
+##  - Response matrix + input grid
+##  - Evaluation point
+##Output:
+##  - Interpolated response matrix
+##---------------------------------------------##
+def InterpolateResponseMatrix(Resp, grid, points):
+    # Input grid (bin center):
+    Psitrue_center=grid['true_psi_center']
+    Etrue_center=grid['true_energy_center']
+    Psireco_center=grid['reco_psi_center']
+    Ereco_center=grid['reco_energy_center']
+
+    # Evaluation points:
+    Psitrue_interp = points['true_psi_center']
+    Etrue_interp = points['true_energy_center']
+    Psireco_interp = points['reco_psi_center']
+    Ereco_interp = points['reco_energy_center']
+
+    # Interpolate the response matrix on desired evaluation points:
+    Resp_interp = RegularGrid_4D((Psitrue_center, Etrue_center, Psireco_center, Ereco_center), Resp, 
+                    (Psitrue_interp, Etrue_interp, Psireco_interp, Ereco_interp))
+
+    return Resp_interp
+    

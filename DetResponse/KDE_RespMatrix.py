@@ -68,7 +68,7 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde", nu_type="nu_e", pid=0):
     Ereco = MCcut["E_reco"][loc]
     w = MCcut["w"][loc]
         
-    psiE_train = np.vstack([np.log(psitrue), Etrue, np.log(psireco), np.log10(Ereco)])
+    psiE_train = np.vstack([np.log(psitrue), np.log(Etrue), np.log(psireco), np.log10(Ereco)])
     
     #Evaluate points:
     ##Equal spacing in the final variables: reco Psi & log10(E), true psi and true E
