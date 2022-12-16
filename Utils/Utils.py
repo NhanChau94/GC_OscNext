@@ -50,6 +50,16 @@ def RegularGrid_2D(x, values, xinterp):
     return Val_intp
 
 
+
+#------------------------------------------------------------
+## Get the open angle from GC, psi from RA and DEC
+
+def psi_f(RA,decl):
+    return np.arccos(np.cos(np.pi/2.-(-29.*np.pi/180))*np.cos(np.pi/2.-decl)
+                      +np.sin(np.pi/2.-(-29.*np.pi/180))*np.sin(np.pi/2.-decl)*
+                       np.cos(RA-266.*np.pi/180))
+
+
 # Set of functions for time convertor
 
 

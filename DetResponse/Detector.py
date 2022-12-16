@@ -108,29 +108,27 @@ def GroupBinning(true_energy_edges, true_psi_edges, true_energy_center, true_psi
 
     return Bin
 
-def Std_Binning(mass):
+def Std_Binning(mass, N_Etrue = 100, N_psitrue = 50, N_Ereco=50, N_psireco = 18):
 
     # Binning:
     # E true
-    N_Etrue = 100
+    
     Etrue_center = np.array(np.linspace(1., mass, N_Etrue))
     Ewidth = (mass-1.)/(N_Etrue-1.)
     Etrue_edges = np.array([E - Ewidth/2. for E in Etrue_center])
     Etrue_edges = np.append(Etrue_edges, Etrue_center[-1] + Ewidth/2.)
+
     # Psi true
-    N_psitrue = 50
+
     Psitrue_edges = np.linspace(0., 180., N_psitrue+1)
-    Psiwidth = 180./N_psitrue
-    Psitrue_center = np.array([Psitrue_edges[i]+Psiwidth/2. for i in range(len(Psitrue_edges)-1)])
-    # Psitrue_center = np.exp(np.linspace(np.log(0.005), np.log(180), 3* N_psitrue))
+    Psitrue_center = np.array( [(Psitrue_edges[i]+Psitrue_edges[i+1])/2. for i in range(len(Psitrue_edges)-1)] )
 
     # E reco
-    Ereco_edges = pow(10., np.linspace(np.log10(1.), np.log10(1e3), 50+1))
+    Ereco_edges = pow(10., np.linspace(np.log10(1.), np.log10(1e3), N_Ereco+1))
     Ereco_center = np.array([np.sqrt(Ereco_edges[i]*Ereco_edges[i+1]) for i in range(len(Ereco_edges) - 1)])
 
 
     # Psi reco
-    N_psireco = 18
     Psireco_edges = np.linspace(0., 180., N_psireco+1)
     Psireco_center = np.array( [(Psireco_edges[i]+Psireco_edges[i+1])/2. for i in range(len(Psireco_edges)-1)] )
     # Psireco_center = np.exp(np.linspace(np.log(0.005), np.log(180), 3* N_psireco))

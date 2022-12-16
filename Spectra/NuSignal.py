@@ -4,19 +4,13 @@ Collective tools and functions for generating DM interaction (annihilation, deca
 note: part of code comes from N. Iovine's analysis on DM search from Galactic Center with OscNext
 """
 
-import os,time
+import os
 import numpy as np
-import matplotlib.pyplot as plt
-import h5py
 import math
 import pickle as pkl
 
 #Charon
-import sys
-# sys.path.append("/data/user/niovine/software/charon/charon")
 from charon import propa
-# import charon.physicsconstants as PC
-# pc = PC.PhysicsConstants()
 curdir=os.path.dirname(os.path.realpath(__file__))
 
 def open_PPPC4tables(filename, channel_pos, mass):
@@ -199,9 +193,9 @@ def oscillate_spectra(spectra, nutypes, th12, th13, th23, delta):
                                                  spectra[nutypes[2]]["dNdE"][i]]))[2])
 
     #Spectra after oscillation
-    oscillated["dNdE_"+nutypes[0]+"_osc"] = dNdE_nue_osc
-    oscillated["dNdE_"+nutypes[1]+"_osc"] = dNdE_numu_osc
-    oscillated["dNdE_"+nutypes[2]+"_osc"] = dNdE_nutau_osc
+    oscillated["dNdE_"+nutypes[0]+"_osc"] = np.array(dNdE_nue_osc)
+    oscillated["dNdE_"+nutypes[1]+"_osc"] = np.array(dNdE_numu_osc)
+    oscillated["dNdE_"+nutypes[2]+"_osc"] = np.array(dNdE_nutau_osc)
 
     return oscillated
 
@@ -289,15 +283,15 @@ class NuRate:
 
             for flavour in ["nu_mu","nu_e", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 flux_at_Source[flavour]=dict()
-                flux_at_Source[flavour]["E"] = E
-                flux_at_Source[flavour]["dNdE"] = sum(nu_tmp[ch][flavour] for ch in ["nuenue", "numunumu", "nutaunutau"])/(3.*float(self.mass))
+                flux_at_Source[flavour]["E"] = np.array(E)
+                flux_at_Source[flavour]["dNdE"] = np.array(sum(nu_tmp[ch][flavour] for ch in ["nuenue", "numunumu", "nutaunutau"])/(3.*float(self.mass)))
         else:
             Flux.ch = self.channel
             NuCharon=Flux.iniFlux("Halo")
             for flavour in ["nu_mu","nu_e", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 flux_at_Source[flavour]=dict()
-                flux_at_Source[flavour]["E"] = E
-                flux_at_Source[flavour]["dNdE"] = NuCharon[flavour]/float(self.mass)
+                flux_at_Source[flavour]["E"] = np.array(E)
+                flux_at_Source[flavour]["dNdE"] = np.array(NuCharon[flavour]/float(self.mass))
         return flux_at_Source
 
 # Averaged Oscillate PPPC4 flux:

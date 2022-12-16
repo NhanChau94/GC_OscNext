@@ -1,0 +1,3 @@
+[submodule "DMfit"]
+	path = DMfit
+	url = git@github.com:zemrude/DMfit.git

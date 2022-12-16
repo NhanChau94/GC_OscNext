@@ -60,7 +60,7 @@ def Bandwidth_MC(MCdict, nutype, pid, variables, use_weight):
 
     if pid>=0 and pid<3:
         loc = np.where(  (MCdict["nutype"]==pdg_encoding[nutype]) & (MCdict["PID"]>=PID[pid][0])
-                    & (MCdict["PID"]<PID[pid][1]) )
+                    & (MCdict["PID"]<PID[pid][1]) & MCdict["w"]<5000)
         print("----pid: {}".format(pid))
 
             
@@ -75,11 +75,11 @@ def Bandwidth_MC(MCdict, nutype, pid, variables, use_weight):
 
     # Prepare sample for training:
     if variables=='2Dreco':
-        psiE_train = np.vstack([np.log(psireco),np.log10(Ereco)])
+        psiE_train = np.vstack([np.log10(psireco),np.log10(Ereco)])
     if variables=='2Dtrue':
-        psiE_train = np.vstack([np.log(psitrue),np.log(Etrue)])
+        psiE_train = np.vstack([np.log10(psitrue),np.log10(Etrue)])
     if variables=='4D':
-        psiE_train = np.vstack([np.log(psitrue),np.log(Etrue), np.log(psireco),np.log10(Ereco)])
+        psiE_train = np.vstack([np.log10(psitrue),np.log10(Etrue), np.log10(psireco),np.log10(Ereco)])
 
 
     # Bw from scott and silverman rule of thumb:
@@ -90,7 +90,7 @@ def Bandwidth_MC(MCdict, nutype, pid, variables, use_weight):
     bw_scott = n**(-1./(d+4))
     bw_silverman = (n * (d + 2) / 4.)**(-1. / (d + 4))
     # Bandwidth values for scanning:
-    bw = np.arange(0.08, bw_scott+0.01, 0.005)
+    bw = np.array([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07])
 
     print('Bandwidths to scan:')
     print(bw)

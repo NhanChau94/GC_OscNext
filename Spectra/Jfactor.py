@@ -3,18 +3,10 @@ author : N. Chau
 Collective tools and functions for computing Jfactor used for DM search from Galactic Center
 note: part of code comes from N. Iovine's analysis on DM search from Galactic Center with OscNext
 """
-import os, time, sys
+import os, sys
 import numpy as np
-import matplotlib.pyplot as plt
-import h5py
-import math
-import pickle as pkl
+from charon import profile
 
-#Charon
-# sys.path.append("/data/user/niovine/software/charon/charon")
-# from charon import profile
-# import charon.physicsconstants as PC
-# pc = PC.PhysicsConstants()
 curdir=os.path.dirname(os.path.realpath(__file__))
 
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env /cvmfs/icecube.opensciencegrid.org/py3-v4.1.1/RHEL_7_x86_64/bin/python
+#!/usr/bin/env /cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/RHEL_7_x86_64/bin/python
 
 import numpy as np
 from optparse import OptionParser
@@ -11,19 +11,42 @@ from Detector import *
 # KDE:
 from kde.pykde import gaussian_kde
 from sklearn.neighbors import KernelDensity
+# KDEpy:
+from KDEpy import FFTKDE
+from KDEpy.bw_selection import improved_sheather_jones
 
-
-def kde_icecube(x, x_grid, bandwidth=0.03, **kwargs):
+def kde_icecube(x, x_grid, bandwidth=0.03, weights=None, **kwargs):
     """Kernel Density Estimation with icecube package"""
 
     if bandwidth == "adaptive":
         adaptive = True
         weight_adaptive_bw = True
         alpha = 0.3
-        kde = gaussian_kde(x, **kwargs,adaptive=adaptive,
+        kde = gaussian_kde(x, weights=weights, **kwargs,adaptive=adaptive,
                                     weight_adaptive_bw=weight_adaptive_bw,alpha=alpha)
+
+        y = kde.evaluate(x_grid)                            
+    elif bandwidth == 'ISJ':
+        n = x.T.shape[1]
+        print('dimension: {}'.format(n))
+        bw_array = np.zeros(n)
+        for i in range(n):
+            bw_array[i] = improved_sheather_jones(x.T[:, [i]], weights=weights)
+        print('bandwidth: ')
+        print(bw_array)
+        x_scaled = x.T/bw_array
+        grid_scaled = x_grid.T/bw_array
+
+        kde = gaussian_kde(x_scaled.T, weights=weights, **kwargs)
+        kde.set_bandwidth(1.)
+
+        y_scaled = kde.evaluate(grid_scaled.T)
+        # print('dimension of kde output: {}'.format(y_scaled.shape))
+        # if do the kde in logscale -> f(x)~f(logx)/x
+        # divide the by the variables whose ids decclare in the logscale array
+        y = y_scaled/np.prod(bw_array)
     else:
-        kde = gaussian_kde(x, **kwargs)
+        kde = gaussian_kde(x, weights=weights, **kwargs)
         # for scipy: scale to try to match sklearn in case of scalar
         # Note that scipy weights its bandwidth by the covariance of the
         # input data.  To make the results comparable to the other methods,
@@ -33,16 +56,37 @@ def kde_icecube(x, x_grid, bandwidth=0.03, **kwargs):
         #     bandwidth = bandwidth / x.std(ddof = 1)
 
         kde.set_bandwidth(bandwidth)
-    return kde.evaluate(x_grid)
+        y = kde.evaluate(x_grid) 
+    return y
 
-def kde_sklearn(x, x_grid, bandwidth=0.03, weight=0, **kwargs):
+def kde_sklearn(x, x_grid, bandwidth=0.03, weights=None, **kwargs):
     """Kernel Density Estimation with Scikit-learn"""
-    kde_skl = KernelDensity(bandwidth=bandwidth, **kwargs)
-    kde_skl.fit(x, sample_weight=weight)
-    # score_samples() returns the log-likelihood of the samples
-    log_pdf = kde_skl.score_samples(x_grid)
-    return np.exp(log_pdf)
-    # return kde_skl    
+    if bandwidth=='ISJ':
+        n = x.shape[1]
+        print('dimension: {}'.format(n))
+        bw_array = np.zeros(n)
+        for i in range(n):
+            bw_array[i] = improved_sheather_jones(x[:, [i]], weights=weights)
+        print('bandwidth: ')
+        print(bw_array)
+        x_scaled = x/bw_array
+        grid_scaled = x_grid/bw_array
+        
+        kde_skl = KernelDensity(bandwidth=1.,  **kwargs)
+        kde_skl.fit(x_scaled, sample_weight=weights)
+
+        y_scaled = np.exp(kde_skl.score_samples(grid_scaled))
+        # print('dimension of kde output: {}'.format(y_scaled.shape))
+        # if do the kde in logscale -> f(x)~f(logx)/x
+        # divide the by the variables whose ids decclare in the logscale array
+        y = y_scaled/np.prod(bw_array)
+    else:
+        kde_skl = KernelDensity(bandwidth=bandwidth, **kwargs)
+        kde_skl.fit(x, sample_weight=weights)
+        # score_samples() returns the log-likelihood of the samples
+        log_pdf = kde_skl.score_samples(x_grid)
+        y = np.exp(log_pdf)
+    return y
 
 
 def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde", nu_type="nu_e", pid=0, nopid=False):
@@ -53,14 +97,14 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde", nu_type="nu_e", pid=0, n
     PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
 
     Resp = dict()
-    print("Computing {} PID bin".format(pid))
     Resp[pid] = dict()
+    print("----{}".format(nu_type))
 
     if nopid==False:
         loc = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type]) & (MCcut["PID"]>=PID[pid][0])
                     & (MCcut["PID"]<PID[pid][1]) )
-        print("----{}".format(nu_type))
-            
+        print("Computing {} PID bin".format(pid))
+    
     else:
         loc = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type]) )                        
         print('no pid accounted')
@@ -93,12 +137,12 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde", nu_type="nu_e", pid=0, n
                         np.log(psi_eval_reco), np.log10(E_eval_reco)])
     print("Evaluating KDE.....")    
     if method=="sklearn":
-        kde_w = kde_sklearn(psiE_train.T, psiE_eval.T, bandwidth=bw_method, weight=w)
+        kde_w = kde_sklearn(psiE_train.T, psiE_eval.T, bandwidth=bw_method, weights=w)
         #Needs to be divided by evaluation angle
         kde_weight = kde_w.reshape(psi_eval_true.shape)/(psi_eval_true* psi_eval_reco* E_eval_true)
     else:
-        # kde_w = kde_icecube(psiE_train, psiE_eval, bandwidth=bw_method, weights=w)
-        kde_w = kde_icecube(psiE_train, psiE_eval, bandwidth=bw_method)
+        kde_w = kde_icecube(psiE_train, psiE_eval, bandwidth=bw_method, weights=w)
+        # kde_w = kde_icecube(psiE_train, psiE_eval, bandwidth=bw_method)
 
         #Needs to be divided by evaluation angle
         kde_weight = kde_w/(psi_eval_true* psi_eval_reco* E_eval_true)
@@ -112,7 +156,7 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, method="kde", nu_type="nu_e", pid=0, n
     H, edges = np.histogramdd((psi_eval_true, E_eval_true, psi_eval_reco, E_eval_reco),
                                 bins = (Psitrue_edges, Etrue_edges, Psireco_edges, Ereco_edges),
                                 weights=kde_weight)
-    Resp[pid][nu_type] = H
+    Resp[pid][nu_type] = H/np.sum(H) *np.sum(w)
     return Resp                 
 
 
@@ -147,14 +191,12 @@ set = "{}0000".format(abs(pdg[nutype]))
 MC = ExtractMC([set])
 # Create binning:
 # mass: true binning depends on the DM mass
-mass = 1000
+mass = 3100
 
 # Binning:
 # E true
-Etrue_center = np.linspace(1., mass, 100)
-Ewidth = (mass-1.)/(100.-1.)
-Etrue_edges = [E - Ewidth/2. for E in Etrue_center]
-Etrue_edges.append(Etrue_center[-1] + Ewidth/2.)
+Etrue_edges = pow(10., np.linspace(np.log10(1.), np.log10(mass), 301))
+Etrue_center = np.array([np.sqrt(Etrue_edges[i]*Etrue_edges[i+1]) for i in range(len(Etrue_edges) - 1)])
 # Psi true
 Psitrue_edges = np.linspace(0, 180, 51)
 Psiwidth = 180./50.
