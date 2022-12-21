@@ -12,7 +12,7 @@ sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils")
 
 from Detector import *
 from Signal import *
-from Plot_Histogram import *
+from Background import *
 
 from modeling import PdfBase, Model, Parameter
 from data import DataSet
@@ -76,6 +76,8 @@ parser = OptionParser()
 parser.add_option("-c", "--channel", type = "string", action = "store", default = "WW", metavar  = "<channel>", help = "Dark matter channel",)
 parser.add_option("-p", "--profile", type = 'string', action = "store", default = "NFW", metavar  = "<profile>", help = "GC profile",)
 parser.add_option("-s", "--spectra", type = 'string', action = "store", default = "Charon", metavar  = "<spectra>", help = "Spectra: Charon or PPPC4",)
+parser.add_option("--mc", type = 'string', action = "store", default = "0000", metavar  = "<spectra>", help = "MC set",)
+parser.add_option("-b", "--bkg", type = 'string', action = "store", default = "FFT", metavar  = "<bkg>", help = "Background type: FFT with ISJ or sklearn with CV bandwidth",)
 parser.add_option("-m", "--mass", type = float, action = "store", default = None, metavar  = "<mass>", help = "mass values: in case of specify only one value of mass will be input",)
 parser.add_option("-u", "--up", type = float, action = "store", default = 100, metavar  = "<up>", help = "Dark Matter mass up",)
 parser.add_option("-l", "--low", type = float, action = "store", default = 1, metavar  = "<low>", help = "Dark Matter mass low",)
@@ -90,19 +92,24 @@ profile = options.profile
 up = options.up
 low = options.low
 n = options.n
+mc = options.mc
+bkg = options.bkg
 
 Bin = Std_Binning(300, N_Etrue=100)
-Reco = RecoRate(channel, 300, profile, Bin, type="Resp", spectra='Charon')
+Reco = RecoRate(channel, 300, profile, Bin, type="Resp", spectra='Charon', set=mc)
 
-Bkg_bwISJ = ScrambleBkg(Bin, bw="ISJ", oversample=10)
+if bkg=='FFT':
+    BkgPDF = ScrambleBkg(Bin, bw="ISJ", oversample=10)
+elif bkg=='sklearn':
+    BkgPDF = ScrambleBkg(Bin, bw=0.03, method='sklearn' ,oversample=10)    
 UL = np.array([])
 masses = np.exp(np.linspace(np.log(low), np.log(up), n))
 for mass in masses:
     # Bin
-    if mass <1400:
+    if mass <3000:
         Bin = Std_Binning(mass, N_Etrue=100)
     else:
-        Bin = Std_Binning(1400, N_Etrue=100)
+        Bin = Std_Binning(3000, N_Etrue=100)
     Reco.mass = mass
     Reco.bin = Bin
     Reco.Scramble = False    
@@ -110,9 +117,9 @@ for mass in masses:
     Reco.Scramble = True
     Rate_Scr = Reco.ComputeRecoRate()
     BurnSample = DataHist(Bin)
-    UL = np.append(UL, UpperLimit(Rate, Rate_Scr, Bkg_bwISJ, 10*np.sum(BurnSample)*Bkg_bwISJ/(np.sum(Bkg_bwISJ))))
+    UL = np.append(UL, UpperLimit(Rate, Rate_Scr, BkgPDF, 10*np.sum(BurnSample)*BkgPDF/(np.sum(BkgPDF))))
 
-path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/UpperLimit/{}_{}_{}.pkl'.format(channel, profile, n)
+path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/UpperLimit/{}_{}_{}points_MC{}_BKG{}.pkl'.format(channel, profile, n, mc, bkg)
 outdict = dict()
 outdict['mass'] = masses
 outdict['UL'] = UL

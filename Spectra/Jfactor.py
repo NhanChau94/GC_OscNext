@@ -29,13 +29,13 @@ class Jf(object):
     """docstring fo Jfactor
      Extracting density and Jfactor either from Clumpy pre-computed files folder HaloModel
      or from method implemented by Charon
-     2 profiles are considered: NFW and Burkert
+     only NFW and Burkert for Clumpy
     """
 
     def __init__(
         self,
-        process="ann",
         profile="NFW",
+        process='ann'
         ):
         self.profile = profile
         self.process = process
@@ -51,26 +51,28 @@ class Jf(object):
         rho_dict["r"] = r_values
         return rho_dict
 
-    # Charon profile as function of r (array of values in kpc): parametrized
-    def profile_Charon(self, r, default=True, rs=24.42, rhos=0.184, gamma=1):
+    # Charon's profile module as function of r (array of values in kpc)
+    def profile_Charon(self, r, prof=None ,**kwargs):
+        if prof==None:
+            prof=self.profile
         # Create charon object
-        if self.profile=="NFW":
-            if default==True:
-                density = profile.NFW(r)
-            else:
-                density = profile.NFW(r, rs, rhos, gamma)
-        elif self.profile=="Burkert":
-            if default==True:
-                density = profile.Burkert(r)
-            else:
-                density = profile.Burkert(r, rs, rhos)
+        if prof=="NFW":
+            density = profile.NFW(r, **kwargs)
+        elif prof=="Burkert":
+            density = profile.Burkert(r, **kwargs)
+        elif prof=="Einasto":
+            density = profile.Einasto(r, **kwargs)   
+        elif prof=="Zhao":
+            density = profile.Zhao(r, **kwargs)
+        elif prof=="Isothermal":
+            density = profile.Isothermal(r, **kwargs)                       
 
         rho_dict = dict()
         rho_dict["rho"] = density
         rho_dict["r"] = r
         return rho_dict
 
-    # Compute Jfactor taken from Clumpy
+    # PreComputed Jfactor taken from Clumpy
     def Jfactor_Clumpy(self):
         profile = self.profile
         clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Jfactor_dJdOmega_GeV2_cm5_sr_{profile}_NestiSalucci.output"
@@ -84,17 +86,18 @@ class Jf(object):
     # Compute Jfactor with Charon as function of psi in degree
     # R  = 100.  #maximum of the line of sight in kpc
     # d  = 8     #distance from Earth to the Galactic center in kpc
-    def Jfactor_Charon(self, psi, rs=24.42, rhos=0.184, gamma=1, R=100, d=8):
-        process = self.process
-        if self.profile=='NFW':
-            pro=profile.NFW
-            J = profile.J(pro,R,d,process, rs=rs, rhos=rhos, gamma=gamma)
-        elif self.profile=='Burkert':
-            pro=profile.Burkert
-            J = profile.J(pro,R,d,process, rs=rs, rhos=rhos)
-        else:
-            sys.exit("ERROR: the profile considered here are only NFW and Burkert")
-
+    def Jfactor_Charon(self, psi, prof=None, R=100, d=8, process=None, **kwargs ):
+        if process==None:
+            process = self.process
+        if prof==None:
+            prof=self.profile
+        params = {}
+        if len(kwargs.items()) != 0.0:
+            for key, value in kwargs.items():
+                params[key] = value    
+        # Charon object
+        prof=eval('profile.{}'.format(prof))
+        J=profile.J(prof, R, d, process, **params)
         psi_inrad = np.deg2rad(psi) # Charon takes psi in rad
         Jpsi_values = [J.Jtheta(j) for j in psi_inrad]
 

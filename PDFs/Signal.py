@@ -1,6 +1,6 @@
 """
 author : N. Chau
-Creating signal event distribution + pdfs with a prebuilt detector response
+Creating signal event distribution + pdfs with a detector response
 """
 import sys
 import math
@@ -8,18 +8,16 @@ import pickle as pkl
 import numpy as np
 import scipy
 from scipy.interpolate import pchip_interpolate
-# KDE:
-from KDEpy import FFTKDE
-from KDEpy.bw_selection import improved_sheather_jones
 
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Spectra/")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/")
+sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs/")
 from Detector import *
 from Utils import *
 from Interpolate import *
-from NuSignal import NuRate
-
+from NuSpectra import *
+from KDE_implementation import *
 
 # cut low values to zero in case needed
 def cutspectra(spec, cut):
@@ -51,18 +49,18 @@ def Interpolate_Jfactor(inpath, psival):
 
 
 def Interpolate_Spectra(type, Eval, channel, mass, process="ann"):
-    Rate = NuRate(mass, channel, process)
-    Rate.nodes=100
-    Rate.bins=100
+    Rate = NuSpectra(mass, channel, process)
+    Rate.nodes=200
+    Rate.bins=200
     #Different treatment of nu and anti-nu spectra
     if "PPPC4" in type:
         #No distinction is made between neutrinos and anti-neutrinos in PPPC4 tables
         nu_types = ["nu_e", "nu_mu", "nu_tau"]
-        spectra = Rate.NuRatePPPC4_AvgOsc()
+        spectra = Rate.SpectraPPPC4_AvgOsc()
         # pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16}
     elif "Charon" in type:
         #Charon can compute separately nu and anitnu but they seems to be the same in case of Galactic Center
-        spectra = Rate.NuRateCharon_nuSQUIDS()
+        spectra = Rate.SpectraCharon_nuSQUIDS()
         nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
         # pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
 
@@ -121,309 +119,9 @@ def TrueRate(Spectra, Jfactor):
 
 
 
-##---------------------------------------------##
-##Import a precomputed detector response
-##Required:
-##  -  Precomputed detector response file
-##
-##Output:
-##  -  detector response dictionary
-##---------------------------------------------##
-def ImportDetResponse(inpath):
-    DetResponse = pkl.load(open(inpath, "rb"))
-    return DetResponse
-
-##---------------------------------------------##
-##Compute detected rate by using the response matrix
-##Required:
-##  -  Expected rate in true psi, energy
-##  -  Detector response for each channel: nue, nue bar, numu, numu bar, nutau, nutaubar (CC + NC)
-##     + Effective area (true psi, true energy)
-##     + Energy resolution (true psi, true E, reco E)
-##     + psi resolution (true E, true psi, reco psi)
-##     + PID prob (true E, true psi)
-##Output:
-##  -  Detected rate: dictionary of [PID][reco psi][reco E]
-##---------------------------------------------##
-def DetectedRate_withRespMatrix(TrueRate, RespMatrix):
-    # TrueRate[psi][E] * ResponseMatrix[truePsi][trueE][PID][recoPsi][recoE]] sum on true E and psi
-    # -> output: DetectedRate 
-    DetectedRate_bynutype = dict()
-    for nu_type in RespMatrix.keys():
-        if nu_type == 'Bin':
-            continue
-        DetectedRate_bynutype[nu_type] = np.tensordot(TrueRate[nu_type], RespMatrix[nu_type], 
-                                                    axes=([0,1], [0,1]))
-        # -> output as Rate[nu_type][PID][recoPsi][recoE]
-
-    # Sum the contribution of each nutype to a PID bin
-    DetectedRate_byPID = dict()
-    N_PID = len(RespMatrix['Bin']['PID_center'])
-    shapeReco = DetectedRate_bynutype['nu_e'][0].shape
-
-    DetectedRate_byPID = np.zeros((N_PID, shapeReco[0], shapeReco[1]))
-    for i in range(N_PID):
-        for nu_type in DetectedRate_bynutype.keys():
-            DetectedRate_byPID[i] = np.add(DetectedRate_byPID[i], DetectedRate_bynutype[nu_type][i])
 
 
-    Ntot = np.sum(DetectedRate_byPID)
-    return DetectedRate_byPID/Ntot
-
-
-
-
-
-##---------------------------------------------##
-##Compute detected rate with event by event reweight
-##Required:
-##  -  MC events stored in dictionary (psi in deg)
-##  -  Path to Spectra and Jfactor precomputed file
-##Output:
-##  -  Detected rate: dictionary of [PID][reco psi][reco E]
-##---------------------------------------------##
-def DetectedRate_evtbyevt(MCdict, SpectraPath, JfactorPath, channel, mass, bin):
-
-    nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
-    #PDF_variables
-    array_recopsi = np.array([])
-    array_recoE = np.array([])
-    array_PID = np.array([])
-    signal_w = np.array([])
-
-    for nu_type in nu_types:
-        loc = np.where( (MCdict["E_true"]<=mass) & (MCdict["nutype"]==pdg_encoding[nu_type]) )
-        if len(loc[0])==0:
-            continue
-        ##Sort all variables by increasing true_E values##
-        ##NOTE: this is required for spectra interpolation
-        # sort = MCdict["E_true"][loc].argsort()
-
-        ##Simulation weight##
-        genie_w = MCdict["w"][loc]
-
-        ##Spectra interpolation##
-        true_E = MCdict["E_true"][loc]
-        dNdE = Interpolate_Spectra(SpectraPath, true_E, channel, mass)
-        # print ("True_E first & last elements:", true_E[0], true_E[-1])
-        # print ("True_E min & max:", min(true_E), max(true_E))
-        # print ("Negative dNdE values:", np.where(dNdE<0)[0])
-
-        ##Jfactor interpolation##
-        #NOTE: input psi in deg!
-        true_psi = MCdict["psi_true"][loc]
-        Jpsi = Interpolate_Jfactor(JfactorPath, true_psi)
-        # print ("True_psi min & max:", min(true_psi), max(true_psi))
-
-        ##Signal weight##
-        weight = (1./(2 * 4*math.pi * mass**2)) * genie_w * dNdE[nu_type] * Jpsi
-        # print ("Len(weight):",len(weight))
-
-        ##Reco variables:
-        reco_psi = MCdict["psi_reco"][loc]
-        reco_E = MCdict["E_reco"][loc]
-        PID = MCdict["PID"][loc]
-
-        ##group all nutype:
-        array_recopsi = np.append(array_recopsi, reco_psi)
-        array_recoE = np.append(array_recoE, reco_E)
-        array_PID = np.append(array_PID, PID)
-        signal_w = np.append(signal_w, weight)
-
-    ##put into histogram:
-    H = np.histogramdd((array_PID, array_recopsi, array_recoE), 
-                            bins=(bin['PID_edges'], bin['reco_psi_edges'], bin['reco_energy_edges']),
-                            weights=signal_w)
-    sum_w = np.sum(signal_w)
-    return H[0]/sum_w
-
-
-def DetectedRate_evtbyevt_nopid(MCdict, SpectraPath, JfactorPath, channel, mass, bin):
-
-    nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
-    #PDF_variables
-    array_recopsi = np.array([])
-    array_recoE = np.array([])
-    signal_w = np.array([])
-
-    for nu_type in nu_types:
-        loc = np.where( (MCdict["E_true"]<=mass) & (MCdict["nutype"]==pdg_encoding[nu_type]) )
-        if len(loc[0])==0:
-            continue
-        ##Sort all variables by increasing true_E values##
-        ##NOTE: this is required for spectra interpolation
-        # sort = MCdict["E_true"][loc].argsort()
-
-        ##Simulation weight##
-        genie_w = MCdict["w"][loc]
-
-        ##Spectra interpolation##
-        true_E = MCdict["E_true"][loc]
-        dNdE = Interpolate_Spectra(SpectraPath, true_E, channel, mass)
-        # print ("True_E first & last elements:", true_E[0], true_E[-1])
-        # print ("True_E min & max:", min(true_E), max(true_E))
-        # print ("Negative dNdE values:", np.where(dNdE<0)[0])
-
-        ##Jfactor interpolation##
-        #NOTE: input psi in deg!
-        true_psi = MCdict["psi_true"][loc]
-        Jpsi = Interpolate_Jfactor(JfactorPath, true_psi)
-        # print ("True_psi min & max:", min(true_psi), max(true_psi))
-
-        ##Signal weight##
-        weight = (1./(2 * 4*math.pi * mass**2)) * genie_w * dNdE[nu_type] * Jpsi
-        # print ("Len(weight):",len(weight))
-
-        ##Reco variables:
-        reco_psi = MCdict["psi_reco"][loc]
-        reco_E = MCdict["E_reco"][loc]
-        PID = MCdict["PID"][loc]
-
-        ##group all nutype:
-        array_recopsi = np.append(array_recopsi, reco_psi)
-        array_recoE = np.append(array_recoE, reco_E)
-        signal_w = np.append(signal_w, weight)
-
-    ##put into histogram:
-    H = np.histogramdd((array_recopsi, array_recoE), 
-                            bins=(bin['reco_psi_edges'], bin['reco_energy_edges']),
-                            weights=signal_w)
-    sum_w = np.sum(signal_w)
-    return H[0]/sum_w
-
-
-
-
-def DetectedRate_allstep(PathSpectra, PathJfactor, channel, mass):
-    # Extracting response matrix:
-    PathResp = "../DetResponse/PreComp/ResponseMatrix_mass_{}.pkl".format(mass)
-    # print(PathResp)
-    Resp = pkl.load(open(PathResp, "rb"))
-
-    # Compute the Spectra:
-    Etrue_val = Resp['Bin']['true_energy_center']
-    Psitrue_val = Resp['Bin']['true_psi_center']
-    Spectra = Interpolate_Spectra(PathSpectra, Etrue_val, channel, mass)
-    Jfactor = Interpolate_Jfactor(PathJfactor, Psitrue_val)
-    evtrate = TrueRate(Spectra, Jfactor)
-
-    # Compute detected rate as TrueRate x Response Matrix
-    PDF = DetectedRate_withRespMatrix(evtrate, Resp)
-
-    return PDF
-
-#############################################################################
-# FFT kde
-#############################################################################
-
-
-def kde_FFT(x, x_grid, bandwidth=0.03, weights=None, logscale=None):
-    if bandwidth=='ISJnD':
-        # Implementation of ISJ in > 1D following discussion here:
-        # https://github.com/tommyod/KDEpy/issues/81
-        # Assuming each dimension has separate bw values and no cross-term in bw matrix
-        # dimension:
-        n = x.shape[1]
-        print('dimension: {}'.format(n))
-        bw_array = np.zeros(n)
-        for i in range(n):
-            bw_array[i] = improved_sheather_jones(x[:, [i]], weights=weights)
-        print('bandwidth: ')
-        print(bw_array)
-        x_scaled = x/bw_array
-        grid_scaled = x_grid/bw_array
-        y_scaled = FFTKDE(bw=1).fit(x_scaled, weights=weights).evaluate(grid_scaled)
-        # print('dimension of kde output: {}'.format(y_scaled.shape))
-        # if do the kde in logscale -> f(x)~f(logx)/x
-        # divide the by the variables whose ids decclare in the logscale array
-        if logscale!=None:
-            var = 1.
-            for idlog in logscale:
-                print('log scale at var: {}'.format(idlog))
-                print(grid_scaled[:, [idlog]].shape)
-                var*=pow(10.,grid_scaled.T[idlog])
-            y_scaled /= var
-        y = y_scaled/np.prod(bw_array)
-
-    elif bandwidth=='scott':
-        # dimension:
-        d = x.shape[1]
-        # number of points:
-        n = x.shape[0]
-        print('dimension: {}'.format(d))
-        print('length of the sample {}'.format(n))
-        bw_scott = n**(-1./(d+4))
-        print('bandwidth: {}'.format(bw_scott))
-        y = FFTKDE(bw=bw_scott, kernel='gaussian').fit(x, weights=weights).evaluate(x_grid)
-
-    elif bandwidth=='ISJ':
-        # 1 bandwidth for all dimensions
-        n = x.shape[1]
-        xdata = np.array([])
-        w = np.array([])
-        for i in range(n):
-            xdata = np.append(xdata, x[:, [i]])
-            w = np.append(w, weights)
-
-        bw = improved_sheather_jones(np.array([xdata]).T, weights=w)
-        print('bandwidth: {}'.format(bw))
-        y = FFTKDE(bw=bw, kernel='gaussian').fit(x, weights=weights).evaluate(x_grid)
-
-    else:    
-        y = FFTKDE(bw=bandwidth, kernel='gaussian').fit(x, weights=weights).evaluate(x_grid)
-
-    return y
-
-
-# Mirror data at boundary 0
-# bound: dictionary {dimension that bounded: bound value}
-def MirroringData(data, bound):
-    mirrordata = np.zeros(data.shape)
-    for i in range(data.shape[0]):
-        if i in bound:
-            mirrordata[i] = 2*bound[i] - data[i]       
-        else:
-            mirrordata[i] = data[i]       
-    return np.concatenate((data, mirrordata), axis=1)
-
-
-# -----------------------------------------------------------
-## FFT kde only applied when data point within the evaluation grids
-## Thus I extend the grid to 1 more points for each dimension
-## But these points will not be used
-def Extend_EvalPoints(E_true, E_reco, maxEtrue, maxEreco, psi_true, psi_reco):
-    # E true
-    Etrue_width = E_true[1] - E_true[0]
-    while E_true[-1]<maxEtrue:
-        E_true = np.append(E_true, E_true[-1]+Etrue_width)
-    while E_true[0]>0:    
-        E_true = np.append(E_true[0]-Etrue_width, E_true)
-        
-
-    logEreco_width = np.log10(E_reco[1]) - np.log10(E_reco[0])
-    while E_reco[-1]<maxEreco:
-        E_reco = np.append(E_reco, pow(10, np.log10(E_reco[-1])+logEreco_width))
-    while E_reco[0]>0.99:    
-        E_reco = np.append(pow(10, np.log10(E_reco[0])-logEreco_width), E_reco)
-    
-
-    psitrue_width = psi_true[1] - psi_true[0]
-    psi_true = np.append(psi_true[0]-psitrue_width, psi_true)
-    psi_true = np.append(psi_true, psi_true[-1]+psitrue_width)
-
-    psireco_width = psi_reco[1] - psi_reco[0]
-    psi_reco = np.append(psi_reco[0]-psireco_width, psi_reco)
-    psi_reco = np.append(psi_reco, psi_reco[-1]+psireco_width)
-
-    return E_true, E_reco, psi_true, psi_reco
-
-
-
-def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=2000, maxEreco=1000, Scramble=False, mirror=True):
+def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble=False, mirror=True):
 
     #Evaluate points:
     print("Preparing evaluation grid") 
@@ -558,15 +256,17 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=2000, maxEreco=1000, Scramble
     return Resp      
 
 
-def RespMatrix_Interpolated(MCset, Bin, Scramble=False):
+def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
     Evaltrue = Bin['true_energy_center']
-    Evalreco = np.log10(Bin['reco_energy_center'])
+    Evalreco = Bin['reco_energy_center']
     Psievaltrue = Bin['true_psi_center']
     Psievalreco = Bin['reco_psi_center']
 
-    # Access precomputee response matrix and its grid
-    
-    indict = pkl.load(open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}.pkl".format(MCset), "rb"))
+    # Access precomputed response matrix and its grid
+    if logEtrue:
+        indict = pkl.load(open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE.pkl".format(MCset), "rb"))
+    else:
+        indict = pkl.load(open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}.pkl".format(MCset), "rb"))
     if Scramble:
         Resp = indict["Resp_Scr"]
     else:
@@ -575,92 +275,18 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False):
     psitrue = indict['Bin']['true_psi_center']
     Etrue = indict['Bin']['true_energy_center']
     psireco = indict['Bin']['reco_psi_center']
-    Ereco = np.log10(indict['Bin']['reco_energy_center'])
+    Ereco = indict['Bin']['reco_energy_center']
 
     nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
     Resp_interpolated = dict()
     for nu in nu_types:
-        # print("Getting Response Matrix for {}".format(nu))
-        Resp_interpolated[nu] = EqualGridInterpolator((psitrue, Etrue, psireco, Ereco), Resp[nu], order=1)(np.meshgrid(Psievaltrue, Evaltrue, Psievalreco, Evalreco,  indexing='ij'))
+        if logEtrue:
+            Resp_interpolated[nu] = EqualGridInterpolator((psitrue, np.log10(Etrue), psireco, np.log10(Ereco)), Resp[nu], order=1)(np.meshgrid(Psievaltrue, np.log10(Evaltrue), Psievalreco, np.log10(Evalreco),  indexing='ij'))
+        else:
+            Resp_interpolated[nu] = EqualGridInterpolator((psitrue, Etrue, psireco, np.log10(Ereco)), Resp[nu], order=1)(np.meshgrid(Psievaltrue, Evaltrue, Psievalreco, np.log10(Evalreco),  indexing='ij'))
     
     return Resp_interpolated
 
-
-def ScrambleBkg(Bin, sample='burnsample', kde=True, bw="ISJ", oversample=1):
-    # For now only burn sample
-    if sample=='burnsample':
-        dat_dir = "/data/user/niovine/projects/DarkMatter_OscNext/Samples/OscNext/L7/Burnsample/"
-        input_files = []
-        # Take all burnsample:
-        for year in range(2012, 2021):
-            infile = dat_dir + "OscNext_Level7_v02.00_burnsample_{}_pass2_variables_NoCut.pkl".format(year)
-            print('Loading file: ')
-            print(infile)
-            print('')
-            dat = pkl.load(open(infile, 'rb'))
-            input_files = np.append(input_files, dat['burnsample'])
-    
-    array_PID = np.array([])
-    array_recopsi = np.array([])
-    array_recopsi_original = np.array([])
-    array_recoE = np.array([])
-    array_recoRA = np.array([])
-    array_recoRA_original = np.array([])
-    array_recoDec = np.array([])
-
-    # input_file = data['burnsample']
-    for input_file in input_files:
-    # define cut:
-        loc = np.where((input_file["L7muon_classifier_up"]>0.4) &
-                        (input_file["L4noise_classifier"]>0.95) &
-                        (input_file["L7reco_vertex_z"]>-500.) &
-                        (input_file["L7reco_vertex_z"]<-200.) &
-                        (input_file["L7reco_vertex_rho36"]<300.) &
-                        (input_file["L5nHit_DOMs"]>2.5) &
-                        (input_file["L7_ntop15"]<2.5) &
-                        (input_file["L7_nouter"]<7.5) &
-                        (input_file["L7reco_time"]<14500.))
-
-        array_PID = np.append(array_PID, input_file["PID"][loc])
-        array_recopsi_original = np.append(array_recopsi_original, input_file["reco_psi"][loc])
-        array_recoE = np.append(array_recoE, input_file["reco_TotalEnergy"][loc])
-        array_recoDec = np.append(array_recoDec, input_file["reco_Dec"][loc])
-        array_recoRA_original = np.append(array_recoRA_original, input_file["reco_RA"][loc])
-
-    #Oversample the burnsample:
-    array_PID = np.tile(array_PID, oversample)
-    array_recopsi_original = np.tile(array_recopsi_original, oversample)
-    array_recoE = np.tile(array_recoE, oversample)
-    array_recoDec = np.tile(array_recoDec, oversample)
-    array_recoRA_original = np.tile(array_recoRA_original, oversample)
-
-    # Create scramble RA:
-    array_recoRA = np.random.uniform(0,2.*np.pi, size=len(array_recoRA_original))
-
-    # Getting scramble RA psi:
-    array_recopsi = np.rad2deg(psi_f(array_recoRA, array_recoDec))
-
-    Psireco_edges = Bin["reco_psi_edges"]
-    Ereco_edges = Bin["reco_energy_edges"]
-    if kde:
-        psiEtrain = np.vstack([array_recopsi, np.log10(array_recoE)])
-
-        trueEeval, recoEeval, truePsieval, recoPsieval = Extend_EvalPoints(Bin["true_energy_center"], Bin["reco_energy_center"], np.max(array_recoE), np.max(array_recoE), Bin["true_psi_center"], Bin["reco_psi_center"])  
-        g_psi_reco, g_energy_reco = np.meshgrid(recoPsieval, recoEeval, indexing='ij')                      
-        psi_eval_reco = g_psi_reco.flatten()
-        E_eval_reco = g_energy_reco.flatten()
-        psiE_eval = np.vstack([psi_eval_reco, np.log10(E_eval_reco)])
-
-        kde_w = kde_FFT(psiEtrain.T, psiE_eval.T
-                    ,bandwidth=bw)
-        H, v0_edges, v1_edges = np.histogram2d(psi_eval_reco, E_eval_reco,
-                                            bins = (Psireco_edges, Ereco_edges),
-                                            weights=kde_w)
-    else:
-        H, v0_edges, v1_edges = np.histogram2d(array_recopsi, array_recoE,
-                                    bins = (Psireco_edges, Ereco_edges))
-    
-    return H
 
 def DataHist(Bin, sample='burnsample'):
     if sample=='burnsample':
@@ -900,47 +526,6 @@ def KDE_evtbyevt(MCdict, SpectraPath, JfactorPath, channel, mass, bw_method, Bin
     return H/np.sum(kde_weight)*np.sum(weight)
 
 
-# def RecoRate(channel, mass, profile, bin, process='ann', type='Resp', PreCompResp=True ,spectra='Charon', set='0000', Scramble=False):
-#     print("*"*20)
-#     print("Computing true rate with {} spectra".format(spectra))
-#     print("channel: {} || mass: {} || profile: {} || process: {}\n".format(channel, mass, profile))
-
-
-#     # Precomputed Jfactor:
-#     pathJfactor="/data/user/tchau/Sandbox/GC_OscNext/Spectra/PreComp/JFactor_{}.pkl".format(profile)
-
-#     # Extract true rate:
-#     # Jfactor:
-#     Jfactor = Interpolate_Jfactor(pathJfactor, bin['true_psi_center'])
-#     # Spectra:
-#     Spectra = Interpolate_Spectra(spectra, bin['true_energy_center'], channel, mass, process=process)
-
-#     # Compute the rate as Spectra x Jfactor
-#     Rate = TrueRate(Spectra, Jfactor)
-
-
-#     MC = ExtractMC(['14'+set, '12'+set, '16'+set])
-
-#     print("*"*20)
-#     print("Buiding final reco rate using {} method".format(type))
-#     if type=='evtbyevt':
-#         print("Accessing MC set {}".format(set))
-#         MC = ExtractMC(['14'+set, '12'+set, '16'+set])
-#         Reco = KDE_evtbyevt(MC, spectra, pathJfactor, channel, mass, 'ISJ', bin, Scramble=Scramble)
-#     if type=='Resp':
-#         if PreCompResp:
-#             Resp = RespMatrix_Interpolated(set, bin, Scramble=Scramble)
-#         else:
-#             print('Compute Response Matrix from scratch (will take ~6-7 minutes!)')
-#             print("Accessing MC set {}".format(set))
-#             MC = ExtractMC(['14'+set, '12'+set, '16'+set])
-#             Resp = KDE_RespMatrix(MC, bin, 'ISJ', maxEtrue=mass*1.25, maxEreco=1200, Scramble=Scramble)
-#         Reco = np.zeros((len(bin['reco_psi_center']), len(bin['reco_energy_center'])))
-#         for nutype in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
-#             Reco += np.tensordot(Resp[nutype], Rate[nutype], axes=([0,1], [0,1]))    
-#     return Reco
-
-
 class RecoRate:
     """docstring for RecoRate."""
     def __init__(
@@ -1009,16 +594,17 @@ class RecoRate:
         else:
             print('Compute Response Matrix from scratch (will take ~6-7 minutes!)')
             MC = self.GetMC()
-            self.hist['Resp'] = KDE_RespMatrix(MC, self.bin, 'ISJ', maxEtrue=self.mass*1.25, maxEreco=1200, Scramble=self.Scramble)
- 
+            self.hist['Resp'] = KDE_RespMatrix(MC, self.bin, 'ISJ', maxEtrue=self.mass*1.25, maxEreco=1000, Scramble=self.Scramble)
+
+        # Renormalize to the total weight 
         MCcut = self.GetMC()
         for nu_type in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
             pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
             loc_norm = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type])
-                & (MCcut["E_reco"] < np.max(self.bin["reco_energy_edges"]))
-                & (MCcut["E_reco"] > np.min(self.bin["reco_energy_edges"]))
-                & (MCcut["E_true"] < np.max(self.bin["true_energy_edges"]))
-                & (MCcut["E_true"] > np.min(self.bin["true_energy_edges"]))
+                & (MCcut["E_reco"] <= np.max(self.bin["reco_energy_edges"]))
+                & (MCcut["E_reco"] >= np.min(self.bin["reco_energy_edges"]))
+                & (MCcut["E_true"] <= np.max(self.bin["true_energy_edges"]))
+                & (MCcut["E_true"] >= np.min(self.bin["true_energy_edges"]))
                     )
             w_norm = MCcut["w"][loc_norm]                
             self.hist['Resp'][nu_type] = self.hist['Resp'][nu_type]/(np.sum(self.hist['Resp'][nu_type]))* (np.sum(w_norm))
@@ -1041,7 +627,9 @@ class RecoRate:
             for nutype in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 self.hist['RecoRate'] += np.tensordot(Resp[nutype], Rate[nutype], axes=([0,1], [0,1]))
             self.hist['RecoRate'] *= (1./(2 * 4*math.pi * self.mass**2))
+    
         else:
             print("ERROR: Choose self.type among evtbyevt and Resp")
             sys.exit(1)
+    
         return self.hist['RecoRate']

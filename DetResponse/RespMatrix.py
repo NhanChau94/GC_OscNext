@@ -13,7 +13,7 @@ def Extend_grid(E_true, E_reco, maxEtrue, maxEreco, psi_true, psi_reco):
     logEtrue_width = np.log10(E_true[1]) - np.log10(E_true[0])
     while E_true[-1]<maxEtrue:
         E_true = np.append(E_true, pow(10, np.log10(E_true[-1])+logEtrue_width))
-    while E_true[0]>1.:    
+    while E_true[0]>0.95:    
         E_true = np.append(pow(10, np.log10(E_true[0])-logEtrue_width), E_true)
         
 
@@ -90,7 +90,8 @@ def RespMatrix_FFTkde(MCcut, Bin, mirror=True, Scramble=False, weight_cut=True):
                             & (MCcut["E_reco"] < 1000)
                             & (MCcut["E_reco"] > np.min(Bin["reco_energy_center"]))
                             & (MCcut["E_true"] < 3100)
-                            & (MCcut["E_true"] > np.min(Bin["true_energy_center"]))
+                            & (MCcut["E_true"] > 0.95)
+                            #np.min(Bin["true_energy_center"]))
                             # & (MCcut["psi_true"] < np.max(Bin["true_psi_center"]))
                             # & (MCcut["psi_true"] > np.min(Bin["true_psi_center"]))
                             # & (psireco < np.max(Bin["reco_psi_center"]))
@@ -203,4 +204,4 @@ outdict = dict()
 outdict['Bin'] = Bin
 outdict['Resp'] = Resp
 outdict['Resp_Scr'] = Resp_Scr
-pkl.dump(outdict, open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE.pkl".format(set), "wb"))
+pkl.dump(outdict, open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE_v2.pkl".format(set), "wb"))
