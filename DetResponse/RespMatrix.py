@@ -204,4 +204,4 @@ outdict = dict()
 outdict['Bin'] = Bin
 outdict['Resp'] = Resp
 outdict['Resp_Scr'] = Resp_Scr
-pkl.dump(outdict, open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE_v2.pkl".format(set), "wb"))
+pkl.dump(outdict, open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE.pkl".format(set), "wb"))

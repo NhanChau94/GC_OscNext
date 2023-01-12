@@ -19,7 +19,7 @@ from Interpolate import *
 from NuSpectra import *
 from KDE_implementation import *
 
-# cut low values to zero in case needed
+# set low values to zero in case needed
 def cutspectra(spec, cut):
     for flv in ["nu_e", "nu_mu", "nu_tau"]:
         for i, val in enumerate(spec[flv]["dNdE"]):
@@ -38,35 +38,18 @@ def cutspectra(spec, cut):
 ##  -  Interpolated Jfactor
 ##---------------------------------------------##
 
-def Interpolate_Jfactor(inpath, psival):
-    #Open file
-    Jfactor = pkl.load(open(inpath,"rb"))
-
+def Interpolate_Jfactor(Jfactor, psival):
     y_interp = scipy.interpolate.splrep(Jfactor["psi"], Jfactor["J"])
     interp_Jpsi = scipy.interpolate.splev(psival, y_interp, der=0)
 
     return interp_Jpsi
 
 
-def Interpolate_Spectra(type, Eval, channel, mass, process="ann"):
-    Rate = NuSpectra(mass, channel, process)
-    Rate.nodes=200
-    Rate.bins=200
-    #Different treatment of nu and anti-nu spectra
-    if "PPPC4" in type:
-        #No distinction is made between neutrinos and anti-neutrinos in PPPC4 tables
-        nu_types = ["nu_e", "nu_mu", "nu_tau"]
-        spectra = Rate.SpectraPPPC4_AvgOsc()
-        # pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16}
-    elif "Charon" in type:
-        #Charon can compute separately nu and anitnu but they seems to be the same in case of Galactic Center
-        spectra = Rate.SpectraCharon_nuSQUIDS()
-        nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-        # pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
+def Interpolate_Spectra(spectra, Eval, mass, cutlow=True):
 
     #Define array holding interpolated values of spectra
     interp_dNdE = dict()
+    nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
 
     for nu_type in nu_types:
         #Energy
@@ -80,22 +63,12 @@ def Interpolate_Spectra(type, Eval, channel, mass, process="ann"):
 
         # bb and nunu channel of mass below 100GeV gives weird features due to lack of stat in pythia table of charon
         # set values of spectra below 1e-5 to zero and only interpolate the part >1e-5
-        if mass < 100 and ("Charon" in type) and (channel=="bb" or channel=="nunu" or channel=="nuenue"
-                        or channel=="numunumu" or channel=="nutaunutau"):
-            # zeros = np.zeros(len(Eval))
-            #Actually interpolate the spectra for our energy array
-            #Only interpolate for the proper nu_type & above the energy threshold of the spectra
-            neg_v = np.where(interp_dNdE[nu_type]<1e-5)[0]
-            interp_dNdE[nu_type][neg_v] = 0.
+        if cutlow==True:
+            low_v = np.where(interp_dNdE[nu_type]<1e-5)[0]
+            interp_dNdE[nu_type][low_v] = 0.
         # put to zero for energy > mass
         loc = np.where(Eval>mass)
         interp_dNdE[nu_type][loc] = 0.
-
-    if "PPPC4" in type: # in PPPC4 nu and nubar is the same so we just duplicate here (in fact Charon shows the same)
-        interp_dNdE["nu_e_bar"] = interp_dNdE["nu_e"]
-        interp_dNdE["nu_mu_bar"] = interp_dNdE["nu_mu"]
-        interp_dNdE["nu_tau_bar"] = interp_dNdE["nu_tau"]
-
 
     return interp_dNdE
 
@@ -377,7 +350,7 @@ def define_weightcut(weight, cut):
     return w_lim
 
 # Compute weights and extract other informations used for evt-by-evt reweight:
-def ComputeWeight(MCdict, SpectraPath, JfactorPath, channel, mass, process="ann", maxE=2000, weight_cut=True):
+def ComputeWeight(MCdict, Spectra, Jfactor, mass, process="ann", maxE=2000, weight_cut=True):
     nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
     pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
 
@@ -403,12 +376,12 @@ def ComputeWeight(MCdict, SpectraPath, JfactorPath, channel, mass, process="ann"
 
         ##Spectra interpolation##
         true_E = MCdict["E_true"][loc]
-        dNdE = Interpolate_Spectra(SpectraPath, true_E, channel, mass, process)
+        dNdE = Interpolate_Spectra(Spectra, true_E, mass)
 
         ##Jfactor interpolation##
         #NOTE: input psi in deg!
         true_psi = MCdict["psi_true"][loc]
-        Jpsi = Interpolate_Jfactor(JfactorPath, true_psi)
+        Jpsi = Interpolate_Jfactor(Jfactor, true_psi)
 
         ##Signal weight##
         weight = (1./(2 * 4*math.pi * mass**2)) * genie_w * dNdE[nu_type] * Jpsi
@@ -446,8 +419,8 @@ def ComputeWeight(MCdict, SpectraPath, JfactorPath, channel, mass, process="ann"
         signal_w = np.append(signal_w, weight)
     return array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec
 
-def KDE_evtbyevt(MCdict, SpectraPath, JfactorPath, channel, mass, bw_method, Bin, Scramble=False, weight_cut=True, mirror=True, process='ann'):
-    array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec = ComputeWeight(MCdict, SpectraPath, JfactorPath, channel, mass, weight_cut=weight_cut, process=process)
+def KDE_evtbyevt(MCdict, Spectra, Jfactor, mass, bw_method, Bin, Scramble=False, weight_cut=True, mirror=True, process='ann'):
+    array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec = ComputeWeight(MCdict, Spectra, Jfactor, mass, weight_cut=weight_cut, process=process)
     # Define PID cut:
     # PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
     PID = [[0, 1]]
@@ -553,29 +526,60 @@ class RecoRate:
         self.Scramble = Scramble
         self.MCdict = None
         self.hist = dict()
-        # self.hist['Spectra'] = None
-        # self.hist['Jfactor'] = None
-        # self.hist['TrueRate'] = None
-        # self.hist['Resp'] = None
-        # self.hist['RecoRate'] = None
+        self.hist['Spectra'] = None
+        self.hist['Jfactor'] = None
+        self.hist['TrueRate'] = None
+        self.hist['Resp'] = None
+        self.hist['RecoRate'] = None
+
+    def ComputeSpectra(self):
+        if self.hist['Spectra'] is not None:
+            print('Spectra already computed, will not compute it again')
+        else:
+            print('*'*20)
+            print('Computing Spectra')
+            Nu = NuSpectra(self.mass, self.channel, self.process)
+            Nu.nodes=200
+            Nu.bins=200
+            #Different treatment of nu and anti-nu spectra
+            if "PPPC4" in self.spectra:
+                spectra_dict = Nu.SpectraPPPC4_AvgOsc()
+            elif "Charon" in self.spectra:
+                spectra_dict = Nu.SpectraCharon_nuSQUIDS()
+            
+            # bb and nunu channel of mass below 100GeV gives weird features due to lack of stat in pythia table of charon
+            # set values of spectra below 1e-5 to zero and only interpolate the part >1e-5
+            if self.mass < 100 and ("Charon" in self.spectra) and (self.channel=="bb" or self.channel=="nunu" or self.channel=="nuenue"
+                        or self.channel=="numunumu" or self.channel=="nutaunutau"):
+                cutlow=True
+            else:
+                cutlow=False            
+            self.hist['Spectra'] = Interpolate_Spectra(spectra_dict, self.bin['true_energy_center'], self.mass, cutlow=cutlow)
+
+        return self.hist['Spectra']
+    
+    def ComputeJfactor(self):
+        if self.hist['Jfactor'] is not None:
+            print('Jfactor already computed, will not compute it again')
+        else:
+            print('*'*20)
+            print('Computing Jfactor with default option: precomputed Clumpy file')
+            pathJfactor="/data/user/tchau/Sandbox/GC_OscNext/Spectra/PreComp/JFactor_{}.pkl".format(self.profile)
+            Jfactor = pkl.load(open(pathJfactor,"rb"))
+            self.hist['Jfactor'] = Interpolate_Jfactor(Jfactor, self.bin['true_psi_center'])
+    
+        return self.hist['Jfactor']    
 
     def ComputeTrueRate(self):
         print("*"*20)
         print("Computing true rate with {} spectra".format(self.spectra))
         print("channel: {} || mass: {} || profile: {} || process: {}\n".format(self.channel, self.mass, self.profile, self.process))
+        
+        spectra_dict = self.ComputeSpectra()
+        jfactor = self.ComputeJfactor()
 
-
-        # Precomputed Jfactor:
-        pathJfactor="/data/user/tchau/Sandbox/GC_OscNext/Spectra/PreComp/JFactor_{}.pkl".format(self.profile)
-
-        # Extract true rate:
-        # Jfactor:
-        self.hist['Jfactor'] = Interpolate_Jfactor(pathJfactor, self.bin['true_psi_center'])
-        # Spectra:
-        self.hist['Spectra'] = Interpolate_Spectra(self.spectra, self.bin['true_energy_center'], self.channel, self.mass, process=self.process)
-
-        # Compute the rate as Spectra x Jfactor
-        self.hist['TrueRate'] = TrueRate(self.hist['Spectra'], self.hist['Jfactor'])
+        # Compute the rate as Spectra x Jfactor for each neutrino flavours
+        self.hist['TrueRate'] = TrueRate(spectra_dict, jfactor)
         return self.hist['TrueRate']
 
     def GetMC(self):
@@ -617,8 +621,18 @@ class RecoRate:
 
         if self.type=='evtbyevt':
             MC = self.GetMC()
+            Nu = NuSpectra(self.mass, self.channel, self.process)
+            Nu.nodes=200
+            Nu.bins=200
+            #Different treatment of nu and anti-nu spectra
+            if "PPPC4" in self.spectra:
+                spectra_dict = Nu.SpectraPPPC4_AvgOsc()
+            elif "Charon" in self.spectra:
+                spectra_dict = Nu.SpectraCharon_nuSQUIDS()
+            print('Computing Jfactor with default option: precomputed Clumpy file')
             pathJfactor="/data/user/tchau/Sandbox/GC_OscNext/Spectra/PreComp/JFactor_{}.pkl".format(self.profile)
-            self.hist['RecoRate']= KDE_evtbyevt(MC, self.spectra, pathJfactor, self.channel, self.mass, 'ISJ', self.bin, Scramble=self.Scramble)
+            Jfactor = pkl.load(open(pathJfactor,"rb"))
+            self.hist['RecoRate']= KDE_evtbyevt(MC, spectra_dict, Jfactor, self.mass, 'ISJ', self.bin, Scramble=self.Scramble)
         
         elif self.type=='Resp':
             Rate = self.ComputeTrueRate()

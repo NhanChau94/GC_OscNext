@@ -56,7 +56,7 @@ def plot_2DHist(H, axis_edges, x_label, y_label, title, min=None, norm=None):
     plt.show()
     
     
-def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None, zlogscale=False):
+def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None, zlogscale=False, savedir=None):
 
     # Define size of figure
     fig = plt.figure(figsize=(20, 15))
@@ -127,7 +127,10 @@ def plot_projections(H, axis_edges, x_label, y_label, title, norm=None, min=None
     cbar.ax.set_title('Density', fontsize=14, loc='left')
     #cax.set_ylabel('Density')
     fig.tight_layout()
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
     plt.show()
+    if savedir!=None:
+        fig.savefig(savedir)
 
 
 def Plot2D_sidebyside(H1, H2, Edges, title1="this", title2="that"):

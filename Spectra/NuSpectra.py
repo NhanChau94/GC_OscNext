@@ -22,7 +22,6 @@ def open_PPPC4tables(filename, channel_pos, mass):
     f = open(filename).readlines()
     energy = []
     spectrum = []
-    n=0
     for line in f :
         #Get the content of each line in a list
         line_split = line.split()
@@ -155,7 +154,27 @@ def oscillate_spectra(spectra, nutypes, th12, th13, th23, delta):
 
 
 class NuSpectra:
-    """docstring for NuSpectra."""
+    """
+    Class for computing neutrino spectra using either PPPC4 or Charon.
+    
+    Parameters:
+    mass (float, optional): mass of the dark matter particle (default: 100)
+    channel (str, optional): channel to consider (default: "bb")
+    process (str, optional): "ann" for annihilation or "decay" for decay (default: "ann")
+    theta12 (float, optional): mixing angle theta12 (default: 33.44)
+    theta13 (float, optional): mixing angle theta13 (default: 8.57)
+    theta23 (float, optional): mixing angle theta23 (default: 49.2)
+    dm21 (float, optional): squared mass difference dm21 (default: 7.42e-5)
+    dm31 (float, optional): squared mass difference dm31 (default: 2.515e-3)
+    delta (float, optional): CP-violating phase (default: 194.)
+    nodes (int, optional): number of nodes for computing the spectra (default: 100)
+    bins (int, optional): number of bins for computing the spectra (default: 300)
+    Emin (float, optional): minimum energy to consider (default: 1.)
+    Emax (float, optional): maximum energy to consider (default: None)
+    logscale (bool, optional): whether to use logarithmic scale for energy (default: False)
+    interactions (bool, optional): whether to include interactions in the spectra computation (default: True)
+    """
+ 
 
     def __init__(
             self,
@@ -262,6 +281,12 @@ class NuSpectra:
             PPPC4_osc[flv] = dict()
             PPPC4_osc[flv]["E"] = PPPC4_ini[flv]["E"]
             PPPC4_osc[flv]["dNdE"] = osc_spectra["dNdE_"+flv+"_osc"]
+
+        # duplicate for ani nu:
+        PPPC4_osc['nu_e_bar'] = PPPC4_osc['nu_e_bar']
+        PPPC4_osc['nu_mu_bar'] = PPPC4_osc['nu_mu_bar']
+        PPPC4_osc['nu_tau_bar'] = PPPC4_osc['nu_tau_bar']
+
         return PPPC4_osc
 
 # Averaged Oscillate Charon flux:
@@ -311,6 +336,7 @@ class NuSpectra:
         else:
             Flux.ch = self.channel
             NuCharon=Flux.Halo('detector', zenith=GC_zen)
+            
             for flavour in ["nu_e","nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 flux_at_Earth[flavour]=dict()
                 flux_at_Earth[flavour]["E"] = NuCharon['Energy']

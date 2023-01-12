@@ -26,10 +26,20 @@ def extract_values(filename, pos1, pos2):
 
 
 class Jf(object):
-    """docstring fo Jfactor
-     Extracting density and Jfactor either from Clumpy pre-computed files folder HaloModel
-     or from method implemented by Charon
-     only NFW and Burkert for Clumpy
+    """Class for extracting density and Jfactor profiles.
+
+    Extracting density and Jfactor either from Clumpy pre-computed files in the
+    "HaloModel" folder or from methods implemented by Charon.
+    Currently supported density profiles in Clumpy: NFW and Burkert.
+    Supported density profiles in Charon: NFW, Burkert, Einasto, Zhao, and Isothermal.
+
+    Parameters:
+    profile (str): Density profile to use. Must be one of "NFW" or "Burkert" for Clumpy,
+                   or one of "NFW", "Burkert", "Einasto", "Zhao", or "Isothermal" for Charon.
+                   Default is "NFW".
+    process (str): Annihilation or decay process. Must be either "ann" or "decay".
+                   Default is "ann".
+
     """
 
     def __init__(
@@ -39,7 +49,8 @@ class Jf(object):
         ):
         self.profile = profile
         self.process = process
-# profile extraction: dictionary of {r:[values of r in kpc], rho:[values of rho in GeV/cm^3]}
+
+    # profile extraction: dictionary of {r:[values of r in kpc], rho:[values of rho in GeV/cm^3]}
 
     # Clumpy: contain subhalo
     def profile_Clumpy(self):
