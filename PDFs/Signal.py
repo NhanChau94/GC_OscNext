@@ -593,26 +593,28 @@ class RecoRate:
         print("*"*20)
         print("Computing Response Matrix")
 
-        if self.PreCompResp:
-            self.hist['Resp'] = RespMatrix_Interpolated(self.set, self.bin, Scramble=self.Scramble)
+        if self.hist['Resp'] is None:
+            if self.PreCompResp:
+                self.hist['Resp'] = RespMatrix_Interpolated(self.set, self.bin, Scramble=self.Scramble)
+            else:
+                print('Compute Response Matrix from scratch (will take ~6-7 minutes!)')
+                MC = self.GetMC()
+                self.hist['Resp'] = KDE_RespMatrix(MC, self.bin, 'ISJ', maxEtrue=self.mass*1.25, maxEreco=1000, Scramble=self.Scramble)
+
+            # Renormalize to the total weight 
+            MCcut = self.GetMC()
+            for nu_type in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
+                pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
+                loc_norm = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type])
+                    & (MCcut["E_reco"] <= np.max(self.bin["reco_energy_edges"]))
+                    & (MCcut["E_reco"] >= np.min(self.bin["reco_energy_edges"]))
+                    & (MCcut["E_true"] <= np.max(self.bin["true_energy_edges"]))
+                    & (MCcut["E_true"] >= np.min(self.bin["true_energy_edges"]))
+                        )
+                w_norm = MCcut["w"][loc_norm]                
+                self.hist['Resp'][nu_type] = self.hist['Resp'][nu_type]/(np.sum(self.hist['Resp'][nu_type]))* (np.sum(w_norm))
         else:
-            print('Compute Response Matrix from scratch (will take ~6-7 minutes!)')
-            MC = self.GetMC()
-            self.hist['Resp'] = KDE_RespMatrix(MC, self.bin, 'ISJ', maxEtrue=self.mass*1.25, maxEreco=1000, Scramble=self.Scramble)
-
-        # Renormalize to the total weight 
-        MCcut = self.GetMC()
-        for nu_type in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
-            pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-            loc_norm = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type])
-                & (MCcut["E_reco"] <= np.max(self.bin["reco_energy_edges"]))
-                & (MCcut["E_reco"] >= np.min(self.bin["reco_energy_edges"]))
-                & (MCcut["E_true"] <= np.max(self.bin["true_energy_edges"]))
-                & (MCcut["E_true"] >= np.min(self.bin["true_energy_edges"]))
-                    )
-            w_norm = MCcut["w"][loc_norm]                
-            self.hist['Resp'][nu_type] = self.hist['Resp'][nu_type]/(np.sum(self.hist['Resp'][nu_type]))* (np.sum(w_norm))
-
+            print('Response Matrix already computed, will not compute it again')
         return self.hist['Resp']
 
     def ComputeRecoRate(self):
@@ -647,3 +649,10 @@ class RecoRate:
             sys.exit(1)
     
         return self.hist['RecoRate']
+
+    def ResetAllHists(self):
+        self.hist['Spectra'] = None
+        self.hist['Jfactor'] = None
+        self.hist['TrueRate'] = None
+        self.hist['Resp'] = None
+        self.hist['RecoRate'] = None
