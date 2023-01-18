@@ -109,6 +109,8 @@ Rate = Reco.ComputeRecoRate()
 
 Reco.Scramble = True
 Rate_Scr = Reco.ComputeRecoRate()
+Reco.ResetAllHists()
+
 
 Reco.Scramble = False
 Reco.set=mcinj

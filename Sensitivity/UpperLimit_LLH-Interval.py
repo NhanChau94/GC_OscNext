@@ -124,30 +124,37 @@ if nsample!=0:
         low2 = np.array([])  
         up1 = np.array([])
         up2 = np.array([])
-        UL_dist = np.array([])
+else:
+    UL = np.array([])
 
 masses = np.exp(np.linspace(np.log(low), np.log(up), n))
 for mass in masses:
     # Bin
     if mass < 3000:
-        Bin = Std_Binning(mass, N_Etrue=100)
+        Bin = Std_Binning(mass, N_Etrue=300)
     else:
-        Bin = Std_Binning(3000, N_Etrue=100)
+        Bin = Std_Binning(3000, N_Etrue=300)
     Reco.mass = mass
     Reco.bin = Bin
+    
     Reco.Scramble = False    
     Rate = Reco.ComputeRecoRate()
+    Reco.ResetAllHists()
+
     Reco.Scramble = True
     Rate_Scr = Reco.ComputeRecoRate()
+    Reco.ResetAllHists()
     BurnSample = DataHist(Bin)
     if nsample==0:
-        UL = np.array([])
         UL = np.append(UL, UpperLimit(Rate, Rate_Scr, BkgPDF, 10*np.sum(BurnSample)*BkgPDF/(np.sum(BkgPDF)), method=method))
     else:
+        UL_dist = np.array([])
         for i in range(nsample):
             UL_dist = np.append(UL_dist, UpperLimit(Rate, Rate_Scr, BkgPDF, 10*np.sum(BurnSample)*BkgPDF/(np.sum(BkgPDF)), method=method, sampling=True))
-        arr1 = np.percentile(UL_dist, [32, 50, 68])
-        arr2 = np.percentile(UL_dist, [10, 50, 90])
+        arr1 = np.percentile(UL_dist, [2.5, 50, 97.5])
+        arr2 = np.percentile(UL_dist, [16, 50, 84])
+
+        #Compute 1 and 2 sigma bands
 
         mean = np.append(mean, arr1[1])
         low1 = np.append(low1, arr1[0])
@@ -170,10 +177,10 @@ else:
     path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/UpperLimit/{}_{}_{}points_MC{}_BKG{}_ULby{}_nsample{}.pkl'.format(channel, profile, n, mc, bkg, method, nsample)
 
     outdict['mean'] = mean
-    outdict['32'] = low1
-    outdict['68'] = up1
-    outdict['10'] = low2
-    outdict['90'] = up2
+    outdict['16'] = low1
+    outdict['84'] = up1
+    outdict['2.5'] = low2
+    outdict['97.5'] = up2
    
 
 pkl.dump(outdict, open(path, "wb"))
