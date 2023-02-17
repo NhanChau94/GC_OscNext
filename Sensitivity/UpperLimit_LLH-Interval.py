@@ -9,10 +9,13 @@ sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DMfit/DMfit")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils")
+sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Spectra")
+
 
 from Detector import *
 from Signal import *
 from Background import *
+from Jfactor import *
 
 from modeling import PdfBase, Model, Parameter
 from data import DataSet
@@ -94,7 +97,8 @@ parser.add_option("-u", "--up", type = float, action = "store", default = 100, m
 parser.add_option("-l", "--low", type = float, action = "store", default = 1, metavar  = "<low>", help = "Dark Matter mass low",)
 parser.add_option("-n", "--n", type = int, action = "store", default = 100, metavar  = "<n>", help = "Dark Matter mass - N point scan",)
 parser.add_option("--method", type = 'string', action = "store", default = "interpolate", metavar  = "<method>", help = "method for getting the UL: interpolate or bisection",)
-parser.add_option("--nsample", type = int, action = "store", default = 0, metavar  = "<n>", help = "Sampling to make brazillian plot: 0 = no sampling",)
+parser.add_option("--nsample", type = int, action = "store", default = 0, metavar  = "<nsample>", help = "Sampling to make brazillian plot: 0 = no sampling",)
+parser.add_option("--errorJ", type = 'string', action = "store", default = "nominal", metavar  = "<errorJ>", help = "Variance on Jfactor from Nesti&Salucci: nominal, errors1, errors2",)
 
 
 (options, args) = parser.parse_args()
@@ -109,6 +113,7 @@ mc = options.mc
 bkg = options.bkg
 method = options.method
 nsample = options.nsample
+errorJ = options.errorJ
 
 Bin = Std_Binning(300, N_Etrue=100)
 Reco = RecoRate(channel, 300, profile, Bin, type="Resp", spectra='Charon', set=mc)
@@ -116,7 +121,9 @@ Reco = RecoRate(channel, 300, profile, Bin, type="Resp", spectra='Charon', set=m
 if bkg=='FFT':
     BkgPDF = ScrambleBkg(Bin, bw="ISJ", oversample=10)
 elif bkg=='sklearn':
-    BkgPDF = ScrambleBkg(Bin, bw=0.03, method='sklearn' ,oversample=10)    
+    BkgPDF = ScrambleBkg(Bin, bw=0.03, method='sklearn' ,oversample=10)
+
+DataPDF = BkgPDF
 
 if nsample!=0:
         mean = np.array([])    
@@ -127,21 +134,33 @@ if nsample!=0:
 else:
     UL = np.array([])
 
+# Manually load Jfactor in case for the error is considered:
+if errorJ!='nominal':
+    MyJ = Jf(profile=profile)
+    J_Clumpy = MyJ.Jfactor_Clumpy(errors=errorJ)
+    J_int = Interpolate_Jfactor(J_Clumpy, Bin['true_psi_center'])
+    
+
+
 masses = np.exp(np.linspace(np.log(low), np.log(up), n))
 for mass in masses:
     # Bin
     if mass < 3000:
         Bin = Std_Binning(mass, N_Etrue=300)
     else:
-        Bin = Std_Binning(3000, N_Etrue=300)
+        Bin = Std_Binning(3000, N_Etrue=500)
     Reco.mass = mass
     Reco.bin = Bin
     
-    Reco.Scramble = False    
+    Reco.Scramble = False
+    if errorJ!='nominal':
+        Reco.hist['Jfactor'] = J_int
     Rate = Reco.ComputeRecoRate()
     Reco.ResetAllHists()
 
     Reco.Scramble = True
+    if errorJ!='nominal':
+        Reco.hist['Jfactor'] = J_int
     Rate_Scr = Reco.ComputeRecoRate()
     Reco.ResetAllHists()
     BurnSample = DataHist(Bin)
@@ -150,7 +169,7 @@ for mass in masses:
     else:
         UL_dist = np.array([])
         for i in range(nsample):
-            UL_dist = np.append(UL_dist, UpperLimit(Rate, Rate_Scr, BkgPDF, 10*np.sum(BurnSample)*BkgPDF/(np.sum(BkgPDF)), method=method, sampling=True))
+            UL_dist = np.append(UL_dist, UpperLimit(Rate, Rate_Scr, BkgPDF, 10*np.sum(BurnSample)*DataPDF/(np.sum(DataPDF)), method=method, sampling=True))
         arr1 = np.percentile(UL_dist, [2.5, 50, 97.5])
         arr2 = np.percentile(UL_dist, [16, 50, 84])
 
@@ -166,8 +185,11 @@ for mass in masses:
 outdict = dict()
 outdict['mass'] = masses
 if nsample==0:
-    path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/UpperLimit/{}_{}_{}points_MC{}_BKG{}_ULby{}.pkl'.format(channel, profile, n, mc, bkg, method)
-
+    if errorJ=='nominal':
+        path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/UpperLimit/{}_{}_{}points_MC{}_BKG{}_ULby{}.pkl'.format(channel, profile, n, mc, bkg, method)
+    else:
+        path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/UpperLimit/{}_{}_{}points_MC{}_BKG{}_ULby{}_Jfactor{}.pkl'.format(channel, profile, n, mc, bkg, method, errorJ)
+        
     outdict['UL'] = UL
     print('='*20)
     print('masses: {}'.format(masses))
