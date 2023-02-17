@@ -3,17 +3,21 @@ author : N. Chau
 Background estimation from RA scramble data
 """
 import sys
-import math
 import pickle as pkl
 import numpy as np
-import scipy
+import healpy as hp
+from astropy.coordinates import SkyCoord
+from astropy_healpix import HEALPix
 
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs/")
+sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/")
+
 from KDE_implementation import *
 from Utils import *
+from Detector import *
 
-
+# Background as RA Scramble data
 def ScrambleBkg(Bin, sample='burnsample', kde=True, method='FFT', bw="ISJ", oversample=1, mirror=True):
     # For now only burn sample
     if sample=='burnsample':
@@ -57,7 +61,7 @@ def ScrambleBkg(Bin, sample='burnsample', kde=True, method='FFT', bw="ISJ", over
         array_recoDec = np.append(array_recoDec, input_file["reco_Dec"][loc])
         array_recoRA_original = np.append(array_recoRA_original, input_file["reco_RA"][loc])
 
-    #Oversample the burnsample:
+    #Oversample the sample:
     array_PID = np.tile(array_PID, oversample)
     array_recopsi_original = np.tile(array_recopsi_original, oversample)
     array_recoE = np.tile(array_recoE, oversample)
@@ -127,3 +131,119 @@ def ScrambleBkg(Bin, sample='burnsample', kde=True, method='FFT', bw="ISJ", over
                                     bins = (Psireco_edges, Ereco_edges))
     
     return H
+
+
+# Galactic Plane astro flux-> taken from the best fit of icecube for pi0 model
+
+def GC_Espectra(E_GC):
+    # Galactic Diffuse flux per neutrino flavour - pi0 model:
+    # Icecube best fit give: 21.8 x 10−12 [TeV cm−2 s−1] at 100 TeV as E^2 dN/dE
+    # return: GeV^{-1} cm^{-2} s^{-1} per flv
+    norm = 21.8 * 1e-12 *1e3/(pow(100.*1e3,-0.7))
+    f_GC = norm* pow(E_GC, -2.7)
+    return f_GC
+
+def GC_SpatialPDF(psi_centers, template='/data/user/tchau/Sandbox/GC_OscNext/Fermi-LAT_pi0_map.npy'):
+    # Galactic Diffuse flux spatial PDF as the function of open angle in degree - default: pi0 model.
+    # reading the template: healpix in equatorial coordinate
+    # return: the spatial PDF [sr-1] as the function of open angle [degree] which have the integration in all direction equal to 1
+
+    # compute the equatorial coordinates corresponding to the pi0 template
+
+    pi0 = np.load(template)
+    nside = hp.npix2nside(pi0.size)
+    hpix = HEALPix(nside=nside, frame='icrs')
+    c = hpix.healpix_to_skycoord(np.arange(0, pi0.size,1))
+    eq = c.icrs
+    # corresponding open angle:
+    CoordPsi = np.rad2deg(psi_f(eq.ra.rad, eq.dec.rad))
+
+
+    # bin the [RA, Dec] distribution to the open angle histogram and normalized to get the PDF:
+    #  requirement: the integration in all direction should yield 1
+
+    # make edges assuming linear binning
+    psi_edges = psi_centers + np.diff(psi_centers)/2.
+    psi_edges = np.append(psi_centers[0] - np.diff(psi_centers)[0]/2., psi_edges)
+    # bin the GC flux in open angle
+    GCflux, edges = np.histogram(CoordPsi, psi_edges, weights=pi0)
+    dpsi = np.deg2rad( np.diff(psi_edges) )
+    # divide by the solid angle of each bin to obtain the differential flux
+    GCflux = GCflux/(2*np.pi* np.sin(np.deg2rad( psi_centers )* dpsi))
+    # make the normalization:
+    GCflux /=np.sum(pi0)
+
+    return GCflux
+
+
+def GC_TrueRate(trueE, truePsi,  ESpectra = GC_Espectra, SpatialPDF=GC_SpatialPDF):
+    # True Rate of GC diffuse flux per flavour as the function in open angle [deg] and energy [GeV]
+    GC_E = ESpectra( trueE )
+    GC_psi = SpatialPDF(truePsi)
+    GC_TrueRate = np.array(GC_psi[:,None]* GC_E)
+
+    return GC_TrueRate
+
+
+def GC_RecoRate(Bin, template='/data/user/tchau/Sandbox/GC_OscNext/Fermi-LAT_pi0_map.npy', 
+               ESpectra=GC_Espectra, SpatialPDF=GC_SpatialPDF, method='evtbyevt', set='1122', scrambled=False):
+
+    if 'evtbyevt' in method:
+        # Access the MC:
+        MCdict = ExtractMC(['14'+set, '12'+set, '16'+set])
+
+        ##Simulation weight##
+        genie_w = MCdict["w"]
+        
+        ##reco and true variables:
+        reco_E = MCdict["E_reco"]
+        true_E = MCdict["E_true"]
+        reco_psi = MCdict["psi_reco"]
+        # true_psi = MCdict["psi_true"]
+        true_RA = MCdict["RA_true"]
+        true_Dec = MCdict["Dec_true"]
+        if scrambled==True:
+            true_RA = np.random.uniform(0,2.*np.pi, size=len(true_RA))
+
+
+        ## Load template
+        pi0 = np.load(template)
+        nside = hp.npix2nside(pi0.size)
+        hpix = HEALPix(nside=nside, frame='icrs')
+
+        # normalize to get the flux pdf: unit[sr^-1] and integration in all direction yields 1
+        dOmg = 4*np.pi/(pi0.size)
+        pi0 = pi0/(np.sum(pi0) *dOmg)
+         
+
+        ## Compute weights of each events 
+        coords_MC = SkyCoord(true_RA, true_Dec, frame='icrs', unit='rad')
+        GC_spatial = hpix.interpolate_bilinear_skycoord(coords_MC, pi0)
+        weights = GC_spatial* GC_Espectra(true_E) * genie_w
+        GC_RecoRate, edges1, edges2 = np.histogram2d(reco_psi, reco_E, bins = (Bin['reco_psi_edges'], Bin['reco_energy_edges']), weights=weights)
+
+    elif 'resp' in method:
+        # access the precomputed response matrix:
+        # The detector response function
+        DetResp = pkl.load(open('/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE.pkl'.format(set), 'rb'))
+        Bin = DetResp['Bin']
+        if scrambled==False:
+            Resp = DetResp['Resp']
+        else:
+            Resp = DetResp['Resp_Scr']  
+        GCtrue = GC_TrueRate(Bin['true_energy_center'], Bin['true_psi_center'],  ESpectra = ESpectra, SpatialPDF=SpatialPDF)
+        GC_RecoRate = np.zeros((Bin['reco_psi_center'].size, Bin['reco_energy_center'].size))
+
+        # Note: the precomputed rsponse matrix is the dw/dE computed in logscale and then normalized to the total weight.
+        # to make the correct weight for logscale bin I transfer it to: dw/(E dE) = dw/(d(logE)) then normalized to the total weight to get the correct integration
+        grid = np.meshgrid(Bin['true_psi_center'], Bin['true_energy_center'], 
+                    Bin['reco_psi_center'], np.log10(Bin['reco_energy_center']), indexing='ij')
+
+
+        for nutype in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
+            totalIntegration = np.sum(Resp[nutype])
+            Resp[nutype] = Resp[nutype]* grid[1]
+            Resp[nutype] = Resp[nutype]/np.sum(Resp[nutype])* totalIntegration
+            GC_RecoRate += np.tensordot(Resp[nutype], GCtrue, axes=([0,1], [0,1]))
+
+    return GC_RecoRate, Bin
