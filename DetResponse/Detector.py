@@ -108,13 +108,13 @@ def GroupBinning(true_energy_edges, true_psi_edges, true_energy_center, true_psi
 
     return Bin
 
-def Std_Binning(mass, N_Etrue = 100, N_psitrue = 50, N_Ereco=50, N_psireco = 18):
+def Std_Binning(ETruemax, N_Etrue = 100, N_psitrue = 50, N_Ereco=50, N_psireco = 18):
 
     # Binning:
     # E true
     
-    Etrue_center = np.array(np.linspace(1., mass, N_Etrue))
-    Ewidth = (mass-1.)/(N_Etrue-1.)
+    Etrue_center = np.array(np.linspace(1., ETruemax, N_Etrue))
+    Ewidth = (ETruemax-1.)/(N_Etrue-1.)
     Etrue_edges = np.array([E - Ewidth/2. for E in Etrue_center])
     Etrue_edges = np.append(Etrue_edges, Etrue_center[-1] + Ewidth/2.)
 

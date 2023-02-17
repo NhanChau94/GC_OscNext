@@ -13,6 +13,8 @@ sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Spectra/")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/")
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs/")
+sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DMfit/DMfit")
+
 from Detector import *
 from Utils import *
 from Interpolate import *
@@ -429,8 +431,8 @@ def KDE_evtbyevt(MCdict, Spectra, Jfactor, mass, bw_method, Bin, Scramble=False,
     #Evaluate points:
     print("Preparing evaluation grid") 
     ##Equal spacing in the final variables: reco Psi & log10(E), true psi and true E
-    maxE = 2000.
-    trueEeval, recoEeval, truePsieval, recoPsieval = Extend_EvalPoints(Bin["true_energy_center"], Bin["reco_energy_center"], maxE, maxE, Bin["true_psi_center"], Bin["reco_psi_center"])  
+    maxE = 3000.
+    trueEeval, recoEeval, truePsieval, recoPsieval = Extend_EvalPoints(Bin["true_energy_center"], Bin["reco_energy_center"], maxE, 1500, Bin["true_psi_center"], Bin["reco_psi_center"])  
 
     g_psi_reco, g_energy_reco = np.meshgrid(recoPsieval, recoEeval, indexing='ij')                      
     psi_eval_reco = g_psi_reco.flatten()
@@ -507,7 +509,8 @@ class RecoRate:
             mass, 
             profile, 
             bin, 
-            process='ann', 
+            process='ann',
+            xsec=1,
             type='Resp', 
             PreCompResp=True,
             spectra='Charon', 
@@ -519,6 +522,7 @@ class RecoRate:
         self.profile = profile
         self.bin = bin
         self.process = process
+        self.xsec = xsec
         self.type = type
         self.PreCompResp = PreCompResp
         self.spectra = spectra
@@ -541,7 +545,7 @@ class RecoRate:
             Nu = NuSpectra(self.mass, self.channel, self.process)
             Nu.nodes=200
             Nu.bins=200
-            #Different treatment of nu and anti-nu spectra
+
             if "PPPC4" in self.spectra:
                 spectra_dict = Nu.SpectraPPPC4_AvgOsc()
             elif "Charon" in self.spectra:
@@ -572,14 +576,19 @@ class RecoRate:
 
     def ComputeTrueRate(self):
         print("*"*20)
-        print("Computing true rate with {} spectra".format(self.spectra))
-        print("channel: {} || mass: {} || profile: {} || process: {}\n".format(self.channel, self.mass, self.profile, self.process))
-        
-        spectra_dict = self.ComputeSpectra()
-        jfactor = self.ComputeJfactor()
+        if self.hist['TrueRate'] is not None:
+            print('True rate already computed, will not compute it again')
+        else:    
+            print("Computing true rate with {} spectra".format(self.spectra))
+            print("channel: {} || mass: {} || profile: {} || process: {}\n".format(self.channel, self.mass, self.profile, self.process))
+            
+            spectra_dict = self.ComputeSpectra()
+            jfactor = self.ComputeJfactor()
 
-        # Compute the rate as Spectra x Jfactor for each neutrino flavours
-        self.hist['TrueRate'] = TrueRate(spectra_dict, jfactor)
+            # Compute the rate as Spectra x Jfactor for each neutrino flavours
+            self.hist['TrueRate'] = TrueRate(spectra_dict, jfactor)
+            for nu_type in self.hist['TrueRate'].keys():
+                self.hist['TrueRate'][nu_type] *= (1./(2 * 4*math.pi * self.mass**2))* self.xsec
         return self.hist['TrueRate']
 
     def GetMC(self):
@@ -642,7 +651,7 @@ class RecoRate:
             self.hist['RecoRate'] = np.zeros((len(self.bin['reco_psi_center']), len(self.bin['reco_energy_center'])))
             for nutype in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 self.hist['RecoRate'] += np.tensordot(Resp[nutype], Rate[nutype], axes=([0,1], [0,1]))
-            self.hist['RecoRate'] *= (1./(2 * 4*math.pi * self.mass**2))
+            # self.hist['RecoRate'] *= (1./(2 * 4*math.pi * self.mass**2)) move this factor to truerate
     
         else:
             print("ERROR: Choose self.type among evtbyevt and Resp")
