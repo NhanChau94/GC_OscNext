@@ -283,9 +283,9 @@ class NuSpectra:
             PPPC4_osc[flv]["dNdE"] = osc_spectra["dNdE_"+flv+"_osc"]
 
         # duplicate for ani nu:
-        PPPC4_osc['nu_e_bar'] = PPPC4_osc['nu_e_bar']
-        PPPC4_osc['nu_mu_bar'] = PPPC4_osc['nu_mu_bar']
-        PPPC4_osc['nu_tau_bar'] = PPPC4_osc['nu_tau_bar']
+        PPPC4_osc['nu_e_bar'] = PPPC4_osc['nu_e']
+        PPPC4_osc['nu_mu_bar'] = PPPC4_osc['nu_mu']
+        PPPC4_osc['nu_tau_bar'] = PPPC4_osc['nu_tau']
 
         return PPPC4_osc
 
