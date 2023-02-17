@@ -53,9 +53,13 @@ class Jf(object):
     # profile extraction: dictionary of {r:[values of r in kpc], rho:[values of rho in GeV/cm^3]}
 
     # Clumpy: contain subhalo
-    def profile_Clumpy(self):
+    def profile_Clumpy(self, errors=None):
         profile = self.profile
-        clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Density_rhor_GeV_cm3_{profile}_NestiSalucci.output"
+        if errors is None:
+            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Density_rhor_GeV_cm3_{profile}_NestiSalucci.output"
+        else:
+            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Density_rhor_GeV_cm3_{profile}_NestiSalucci_{errors}.output"
+
         r_values, rho_values = extract_values(clumpyfile, 0, 3)
         rho_dict = dict()
         rho_dict["rho"] = rho_values
@@ -83,10 +87,14 @@ class Jf(object):
         rho_dict["r"] = r
         return rho_dict
 
-    # PreComputed Jfactor taken from Clumpy
-    def Jfactor_Clumpy(self):
+    # PreComputed Jfactor taken from Clumpy in unit:  [GeV^{2} cm^{-5} sr^{-1}]
+    def Jfactor_Clumpy(self, errors=None):
         profile = self.profile
-        clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Jfactor_dJdOmega_GeV2_cm5_sr_{profile}_NestiSalucci.output"
+        if errors is None:
+            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Jfactor_dJdOmega_GeV2_cm5_sr_{profile}_NestiSalucci.output"
+        else:
+            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Jfactor_dJdOmega_GeV2_cm5_sr_{profile}_NestiSalucci_{errors}.output"
+
         psi_values, Jpsi_values = extract_values(clumpyfile, 0, 4)
 
         JPsi_dict = dict()
