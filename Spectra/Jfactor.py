@@ -87,15 +87,23 @@ class Jf(object):
         rho_dict["r"] = r
         return rho_dict
 
-    # PreComputed Jfactor taken from Clumpy in unit:  [GeV^{2} cm^{-5} sr^{-1}]
+    # PreComputed Jfactor (or D-factor) taken from Clumpy in unit:  
+    # [GeV^{2} cm^{-5} sr^{-1}] for annihilation, [GeV cm^{-2} sr^{-1}] for decay
+
     def Jfactor_Clumpy(self, errors=None):
         profile = self.profile
+        if self.process=='ann':
+            nametag='Jfactor_dJdOmega_GeV2_cm5_sr'
+            col=4
+        elif self.process=='decay':
+            nametag='Dfactor_dDdOmega_GeV_cm2_sr'
+            col=3
         if errors is None:
-            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Jfactor_dJdOmega_GeV2_cm5_sr_{profile}_NestiSalucci.output"
+            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/{nametag}_{profile}_NestiSalucci.output"
         else:
-            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/Jfactor_dJdOmega_GeV2_cm5_sr_{profile}_NestiSalucci_{errors}.output"
+            clumpyfile = f"{curdir}/HaloModels/ClumpyOutput/{profile}/{nametag}_{profile}_NestiSalucci_{errors}.output"
 
-        psi_values, Jpsi_values = extract_values(clumpyfile, 0, 4)
+        psi_values, Jpsi_values = extract_values(clumpyfile, 0, col)
 
         JPsi_dict = dict()
         JPsi_dict["J"] = Jpsi_values

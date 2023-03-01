@@ -19,6 +19,7 @@ from Detector import *
 from Utils import *
 from Interpolate import *
 from NuSpectra import *
+from Jfactor import *
 from KDE_implementation import *
 
 # set low values to zero in case needed
@@ -47,7 +48,7 @@ def Interpolate_Jfactor(Jfactor, psival):
     return interp_Jpsi
 
 
-def Interpolate_Spectra(spectra, Eval, mass, cutlow=True):
+def Interpolate_Spectra(spectra, Eval, Emax, cutlow=True):
 
     #Define array holding interpolated values of spectra
     interp_dNdE = dict()
@@ -68,8 +69,8 @@ def Interpolate_Spectra(spectra, Eval, mass, cutlow=True):
         if cutlow==True:
             low_v = np.where(interp_dNdE[nu_type]<1e-5)[0]
             interp_dNdE[nu_type][low_v] = 0.
-        # put to zero for energy > mass
-        loc = np.where(Eval>mass)
+        # put spectra to zero for energy > Emax (Emax=mass for annihilation, mass/2 for decay)
+        loc = np.where(Eval>Emax)
         interp_dNdE[nu_type][loc] = 0.
 
     return interp_dNdE
@@ -511,10 +512,11 @@ class RecoRate:
             bin, 
             process='ann',
             xsec=1,
+            tdecay=1,
             type='Resp', 
             PreCompResp=True,
             spectra='Charon', 
-            set='0000', 
+            set='1122', 
             Scramble=False
             ):
         self.channel = channel
@@ -523,6 +525,7 @@ class RecoRate:
         self.bin = bin
         self.process = process
         self.xsec = xsec
+        self.tdecay = tdecay
         self.type = type
         self.PreCompResp = PreCompResp
         self.spectra = spectra
@@ -557,8 +560,11 @@ class RecoRate:
                         or self.channel=="numunumu" or self.channel=="nutaunutau"):
                 cutlow=True
             else:
-                cutlow=False            
-            self.hist['Spectra'] = Interpolate_Spectra(spectra_dict, self.bin['true_energy_center'], self.mass, cutlow=cutlow)
+                cutlow=False
+            if self.process=='ann':           
+                self.hist['Spectra'] = Interpolate_Spectra(spectra_dict, self.bin['true_energy_center'], self.mass, cutlow=cutlow)
+            elif self.process=='decay':
+                self.hist['Spectra'] = Interpolate_Spectra(spectra_dict, self.bin['true_energy_center'], self.mass/2., cutlow=cutlow)
 
         return self.hist['Spectra']
     
@@ -568,8 +574,8 @@ class RecoRate:
         else:
             print('*'*20)
             print('Computing Jfactor with default option: precomputed Clumpy file')
-            pathJfactor="/data/user/tchau/Sandbox/GC_OscNext/Spectra/PreComp/JFactor_{}.pkl".format(self.profile)
-            Jfactor = pkl.load(open(pathJfactor,"rb"))
+            MyJ = Jf(process=self.process, profile=self.profile)
+            Jfactor = MyJ.Jfactor_Clumpy()
             self.hist['Jfactor'] = Interpolate_Jfactor(Jfactor, self.bin['true_psi_center'])
     
         return self.hist['Jfactor']    
@@ -587,8 +593,12 @@ class RecoRate:
 
             # Compute the rate as Spectra x Jfactor for each neutrino flavours
             self.hist['TrueRate'] = TrueRate(spectra_dict, jfactor)
+            if self.process=='ann':
+                factor = (1./(2 * 4*math.pi * self.mass**2))* self.xsec
+            elif self.process=='decay':
+                factor = (1./(3 * 4*math.pi * self.mass * self.tdecay))
             for nu_type in self.hist['TrueRate'].keys():
-                self.hist['TrueRate'][nu_type] *= (1./(2 * 4*math.pi * self.mass**2))* self.xsec
+                self.hist['TrueRate'][nu_type] *= factor
         return self.hist['TrueRate']
 
     def GetMC(self):
@@ -641,8 +651,8 @@ class RecoRate:
             elif "Charon" in self.spectra:
                 spectra_dict = Nu.SpectraCharon_nuSQUIDS()
             print('Computing Jfactor with default option: precomputed Clumpy file')
-            pathJfactor="/data/user/tchau/Sandbox/GC_OscNext/Spectra/PreComp/JFactor_{}.pkl".format(self.profile)
-            Jfactor = pkl.load(open(pathJfactor,"rb"))
+            MyJ = Jf(process=self.process, profile=self.profile)
+            Jfactor = MyJ.Jfactor_Clumpy()
             self.hist['RecoRate']= KDE_evtbyevt(MC, spectra_dict, Jfactor, self.mass, 'ISJ', self.bin, Scramble=self.Scramble)
         
         elif self.type=='Resp':

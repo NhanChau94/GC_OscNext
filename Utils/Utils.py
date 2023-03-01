@@ -52,13 +52,37 @@ def RegularGrid_2D(x, values, xinterp):
 
 
 #------------------------------------------------------------
-## Get the open angle from GC, psi from RA and DEC
+## Get the open angle [rad] from GC, psi from RA and DEC [rad]
 
 def psi_f(RA,decl):
     return np.arccos(np.cos(np.pi/2.-(-29.*np.pi/180))*np.cos(np.pi/2.-decl)
                       +np.sin(np.pi/2.-(-29.*np.pi/180))*np.sin(np.pi/2.-decl)*
                        np.cos(RA-266.*np.pi/180))
 
+
+#------------------------------------------------------------
+## ecliptic to equatorial
+
+def ec_to_eq(lon, lat, obl=23.4*np.pi/180.):
+    Dec = np.arcsin( np.sin(lat)* np.cos(obl) + np.cos(lat)*np.sin(obl)*np.sin(lon) )
+
+    sinRA = ( np.cos(lat)* np.sin(lon)* np.cos(obl) - np.sin(lat)* np.sin(obl) )
+    cosRA = np.cos(lon)* np.cos(lat)/np.cos(Dec)
+    RA = np.arccos( np.cos(lon)* np.cos(lat)/np.cos(Dec) )
+
+    loc = np.where(sinRA<0)
+    RA[loc] = 2*np.pi - RA[loc]
+
+    return RA, Dec
+
+#------------------------------------------------------------
+## equatorial to galactic
+
+def eq_to_ga(RA, Dec, RA_NGP=np.deg2rad(192.85948), Dec_NGP=np.deg2rad(27.12825), l_NCP=np.deg2rad(122.93192)):
+    b = np.arcsin( np.sin(Dec)* np.sin(Dec_NGP) + np.cos(Dec)* np.cos(Dec_NGP)* np.cos(RA-RA_NGP) )
+    l = l_NCP - np.arcsin( np.cos(Dec)* np.sin(RA - RA_NGP)/np.cos(b) )
+
+    return l, b
 
 
 #------------------------------------------------------------
