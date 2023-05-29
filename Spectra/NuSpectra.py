@@ -17,7 +17,7 @@ curdir=os.path.dirname(os.path.realpath(__file__))
 # *********************************************************
 # Set of functions for extracting PPPC4 spectra and oscillate it
 
-def open_PPPC4tables(filename, channel_pos, mass):
+def open_PPPC4tables(filename, channel_pos, mass, process='ann'):
     PPPC4 = dict()
     f = open(filename).readlines()
     energy = []
@@ -32,17 +32,21 @@ def open_PPPC4tables(filename, channel_pos, mass):
                 #Convert tables format in E and dNdE
                 E_log = float(line_split[1])+math.log10(mass)
                 energy.append(pow(10,E_log))
-                dNdE = float(line_split[channel_pos])*0.05/((pow(10,0.05)-1)*pow(10,E_log))
+                dNdE = float(line_split[channel_pos])*1/(np.log(10)* pow(10,E_log))
                 spectrum.append(dNdE)
             else:
                 continue
-    PPPC4["E"] = np.array(energy)
-    PPPC4["dNdE"] = np.array(spectrum)
+    if process=='ann':
+        PPPC4["E"] = np.array(energy)
+        PPPC4["dNdE"] = np.array(spectrum)
+    elif process=='decay':
+        PPPC4["E"] = np.array(energy)/2.
+        PPPC4["dNdE"] = np.array(spectrum)*4.
     return PPPC4
 
 
 #Retrieve PPPC4 Spectra (Cirelli) for all masses and channels considered
-def ExtractPPPC4(mass, channel):
+def ExtractPPPC4(mass, channel, process='ann'):
     EW_list = ["mDM", "E", "eLeL","eReR","ee","muLmuL","muRmuR","mumu","tauLtauL","tauRtauR","tautau", "qq", "cc", "bb", "tt",
                "WLWL","WTWT","WW", "ZLZL","ZTZT","ZZ", "gg", "gammagamma", "hh", "nuenue","numunumu","nutaunutau","VVe", "VVmu","VV_tau"]
 
@@ -59,9 +63,9 @@ def ExtractPPPC4(mass, channel):
         nu_tau = dict()
         for tmp_channel in ["nuenue", "numunumu", "nutaunutau"]:
             channel_pos = EW_list.index(tmp_channel)
-            nu_e[tmp_channel] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_e.dat".format(curdir), channel_pos, mass)
-            nu_mu[tmp_channel] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_mu.dat".format(curdir), channel_pos, mass)
-            nu_tau[tmp_channel] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_tau.dat".format(curdir), channel_pos, mass)
+            nu_e[tmp_channel] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_e.dat".format(curdir), channel_pos, mass, process=process)
+            nu_mu[tmp_channel] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_mu.dat".format(curdir), channel_pos, mass, process=process)
+            nu_tau[tmp_channel] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_tau.dat".format(curdir), channel_pos, mass, process=process)
 
         PPPC4_values['nu_e']["dNdE"] = sum(nu_e[ch]['dNdE'] for ch in ["nuenue", "numunumu", "nutaunutau"])/3.
         PPPC4_values['nu_e']["E"] = nu_e["nuenue"]["E"]
@@ -72,9 +76,9 @@ def ExtractPPPC4(mass, channel):
 
     else:
         channel_pos = EW_list.index(channel)
-        PPPC4_values['nu_e'] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_e.dat".format(curdir), channel_pos, mass)
-        PPPC4_values['nu_mu'] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_mu.dat".format(curdir), channel_pos, mass)
-        PPPC4_values['nu_tau'] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_tau.dat".format(curdir), channel_pos, mass)
+        PPPC4_values['nu_e'] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_e.dat".format(curdir), channel_pos, mass, process=process)
+        PPPC4_values['nu_mu'] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_mu.dat".format(curdir), channel_pos, mass, process=process)
+        PPPC4_values['nu_tau'] = open_PPPC4tables("{}/PPPC4_table/AtProduction_neutrinos_tau.dat".format(curdir), channel_pos, mass, process=process)
 
     return PPPC4_values
 
@@ -233,7 +237,7 @@ class NuSpectra:
     # Computed flux in the format of dictionary: {produced flavour:{"E":energy value array, "dN/dE": spectra value array}}
 
     def SpectraPPPC4(self):
-        return ExtractPPPC4(self.mass, self.channel)
+        return ExtractPPPC4(self.mass, self.channel, process=self.process)
 
     def SpectraCharon(self):
         if self.process == "ann":
@@ -273,7 +277,7 @@ class NuSpectra:
 # Averaged Oscillate PPPC4 flux:
     def SpectraPPPC4_AvgOsc(self):
         PPPC4_ini = self.SpectraPPPC4()
-        nu_types = ["nu_e","nu_mu", "nu_tau"]
+        nu_types = ["nu_e", "nu_mu", "nu_tau"]
         PPPC4_osc = dict()
         osc_spectra = oscillate_spectra(PPPC4_ini, nu_types, self.theta12, self.theta13, self.theta23, self.delta)
 
@@ -344,17 +348,3 @@ class NuSpectra:
         return flux_at_Earth
 
 
-
-
-# Code to test function
-
-# f=NuRate(1000, 'nuenue', 'ann')
-# style={"nu_mu":"-", "nu_mu_bar":"-."}
-#
-# rate=f.NuRateCharon_AverageOscillated()
-# rate_source=f.NuRateCharon()
-# for flv in ["nu_mu"]:
-#     plt.plot(rate[flv]["E"], rate[flv]["dNdE"], linestyle=style[flv])
-#     plt.plot(rate_source[flv]["E"], rate_source[flv]["dNdE"], linestyle="-.")
-#     plt.semilogy()
-# plt.show()

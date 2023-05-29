@@ -4,7 +4,8 @@ Making the detector response functions (eff area, resolution function and PID pr
 """
 import numpy as np
 import pickle as pkl
-import sys
+import sys, re, os
+
 sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
 from Utils import *
 ##---------------------------------------------##
@@ -16,7 +17,7 @@ from Utils import *
 ##  -  open angle also transfered to degree
 ##---------------------------------------------##
 
-def ApplyCut(inMC, cut="OscNext"):
+def ApplyCut(inMC, cut="OscNext", dis_correction=None):
     HE_cut = 9000.
     # Applying cuts
     if cut == "Default":
@@ -33,6 +34,7 @@ def ApplyCut(inMC, cut="OscNext"):
                        (inMC["L7_nouter"]<7.5) &
                        (inMC["L7reco_time"]<14500.) 
                         &(inMC["true_Energy"]<=HE_cut)
+                        & (inMC["reco_TotalEnergy"]>1.)
                         )
 
     # Output: samples of: particle types, true E,  true psi; PID, reco_E, reco_psi, RA, DEC, Solid Angle and weights
@@ -47,6 +49,7 @@ def ApplyCut(inMC, cut="OscNext"):
     output_dict["RA_true"] = inMC["true_RA"][loc]
     output_dict["Dec_reco"] = inMC["reco_Dec"][loc]
     output_dict["RA_reco"] = inMC["reco_RA"][loc]
+    output_dict["AtmWeight"] = (inMC["AtmWeight"][loc]/inMC["NFiles"])
     # output_dict["SA_true"] = 2* np.pi *(1-np.cos(np.deg2rad["psi_true"]))
     # output_dict["SA_reco"] = 2* np.pi *(1-np.cos(np.deg2rad["psi_reco"]))
 
@@ -61,6 +64,29 @@ def ApplyCut(inMC, cut="OscNext"):
 
     output_dict["w"] = genie_w
     output_dict["oneweight"] = inMC["OneWeight"][loc]
+
+    # Apply dis xsec correction to the weight:
+    if dis_correction!=None:
+        print('***Applying CSMS correction for DIS cross-section')
+        diff_correction = inMC["dis_diff"][loc]
+        tot_correction = inMC["dis_tot"][loc]
+        if 'x3' in dis_correction:
+            diff_correction = inMC["dis_diffx3"][loc]
+            tot_correction = inMC["dis_totx3"][loc]
+        if 'x-3' in dis_correction:
+            diff_correction = inMC["dis_diffx-3"][loc]
+            tot_correction = inMC["dis_totx-3"][loc]    
+        if 'cut' in dis_correction: # only apply correction above 100 GeV
+            cut = np.where(output_dict["E_true"]<100)
+            diff_correction[cut] = 1.
+            tot_correction[cut] = 1.
+        if 'onlytot' in dis_correction: # no correction on differential    
+            diff_correction = 1.
+        if 'onlydiff' in dis_correction: # no correction on tot    
+            tot_correction = 1.
+
+        output_dict["w"] *= diff_correction* tot_correction
+
     return output_dict
 
 
@@ -69,13 +95,23 @@ def ExtractMC(sampleid):
     # Extract Simulation file:
     Cut = dict()
     for sample in sampleid:
-        Sim = pkl.load(open("{}/OscNext_Level7_v02.00_{}_pass2_variables_NoCut.pkl".format(Simdir, sample), "rb"))
-        Cut[sample] = ApplyCut(Sim[sample])
+        MCtag = sample.split('_',1)[0]
+        path = "{}/OscNext_Level7_v02.00_{}_pass2_variables_NoCut_fromI3.pkl".format(Simdir, MCtag)
+        if not os.path.isfile(path):
+            path = "{}/OscNext_Level7_v02.00_{}_pass2_variables_NoCut.pkl".format(Simdir, MCtag)            
+        Sim = pkl.load(open(path, "rb"))
+        if len(sample.split('_',1))==1:
+            Cut[MCtag] = ApplyCut(Sim[MCtag])
+        else:
+            posfix = sample.split('_',1)[1]
+            Cut[MCtag] = ApplyCut(Sim[MCtag], dis_correction=posfix)
+
     MCcut = dict()
-    for key in Cut[sample].keys():
+    for key in Cut[MCtag].keys():
         MCcut[key] = np.array([])
         for sample in sampleid:
-            MCcut[key] = np.concatenate((MCcut[key], Cut[sample][key]), axis=None) 
+            MCtag = re.findall('\d+',sample)[0]
+            MCcut[key] = np.concatenate((MCcut[key], Cut[MCtag][key]), axis=None) 
 
     return MCcut
 
@@ -125,6 +161,7 @@ def Std_Binning(ETruemax, N_Etrue = 100, N_psitrue = 50, N_Ereco=50, N_psireco =
 
     # E reco
     Ereco_edges = pow(10., np.linspace(np.log10(1.), np.log10(1e3), N_Ereco+1))
+    # Ereco_edges = pow(10., np.linspace(np.log10(5.), np.log10(1e3), N_Ereco+1))
     Ereco_center = np.array([np.sqrt(Ereco_edges[i]*Ereco_edges[i+1]) for i in range(len(Ereco_edges) - 1)])
 
 
@@ -354,4 +391,75 @@ def InterpolateResponseMatrix(Resp, grid, points):
                     (Psitrue_interp, Etrue_interp, Psireco_interp, Ereco_interp))
 
     return Resp_interp
-    
+
+
+## Function for computing reweight factor according to DIS uncertainties: CSMS vs Genie
+## Adapting from: https://github.com/icecube/pisa/blob/919c7d6d558dc2b6dbf226717d6c796522cb67aa/pisa/stages/xsec/dis_sys.py#L55
+
+def total_dis(lgE, nutype, current, dis_csms, extrap_type='constant'):
+    # load correction splines:
+    DIS_SYS = '/data/user/tchau/Software/pisa/pisa_examples/resources/'
+    extrap_dict = pkl.load(open(f'{DIS_SYS}/cross_sections/tot_xsec_corr_Q2min1_isoscalar.pckl', 'rb'), encoding='latin1')
+
+
+    lgE_min = np.log10(100) # CSMS does not reliable below 100 GeV
+    w_tot = np.ones_like(lgE)
+    valid_mask = np.where(lgE >= lgE_min)
+    extrapolation_mask = np.where(lgE < lgE_min)
+
+    #
+    # Calculate variation of total cross section
+    #
+    if 'bar' in nutype:
+        nu='NuBar'
+    else:
+        nu='Nu'    
+    poly_coef = extrap_dict[nu][current]['poly_coef']
+    lin_coef = extrap_dict[nu][current]['linear']
+
+    if extrap_type == 'higher':
+        w_tot = np.polyval(poly_coef, lgE)
+    else:
+        w_tot[valid_mask] = np.polyval(poly_coef, lgE[valid_mask])
+
+        if extrap_type == 'constant':
+            w_tot[extrapolation_mask] = np.polyval(poly_coef, lgE_min)  # note Numpy broadcasts
+        elif extrap_type == 'linear':
+            w_tot[extrapolation_mask] = np.polyval(lin_coef, lgE[extrapolation_mask])
+        else:
+            raise ValueError('Unknown extrapolation type "%s"'%extrap_type)
+        
+    # make centered arround 0, and set to 0 for all non-DIS events
+    w_tot = (w_tot - 1) #*dis
+
+    return (1. + w_tot * dis_csms) 
+
+def diff_dis(lgE, bjorken_y, nutype, current, dis_csms):
+    DIS_SYS = '/data/user/tchau/Software/pisa/pisa_examples/resources/'
+
+    wf_nucc = pkl.load(open(f'{DIS_SYS}/cross_sections/dis_csms_splines_flat_no_nucl_corr/NuMu_CC_flat.pckl', 'rb'), encoding='latin1')
+    wf_nubarcc = pkl.load(open(f'{DIS_SYS}/cross_sections/dis_csms_splines_flat_no_nucl_corr/NuMu_Bar_CC_flat.pckl', 'rb'), encoding='latin1')
+    wf_nunc = pkl.load(open(f'{DIS_SYS}/cross_sections/dis_csms_splines_flat_no_nucl_corr/NuMu_NC_flat.pckl', 'rb'), encoding='latin1')
+    wf_nubarnc = pkl.load(open(f'{DIS_SYS}/cross_sections/dis_csms_splines_flat_no_nucl_corr/NuMu_Bar_NC_flat.pckl', 'rb'), encoding='latin1')
+
+    lgE_min = np.log10(100) # CSMS does not reliable below 100 GeV
+    valid_mask = np.where(lgE >= lgE_min)
+    extrapolation_mask = np.where(lgE < lgE_min)
+    w_diff = np.ones_like(lgE)
+
+    if (current == 'CC') and ('bar' not in nutype):
+        weight_func = wf_nucc
+    elif (current == 'CC') and ('bar' in nutype):
+        weight_func = wf_nubarcc
+    elif current == 'NC' and ('bar' not in nutype):
+        weight_func = wf_nunc
+    elif current == 'NC' and ('bar' in nutype):
+        weight_func = wf_nubarnc
+
+    w_diff[valid_mask] = weight_func.ev(lgE[valid_mask], bjorken_y[valid_mask])
+    w_diff[extrapolation_mask] = weight_func.ev(lgE_min, bjorken_y[extrapolation_mask])
+
+
+    # make centered arround 0, and set to 0 for all non-DIS events
+    w_diff = (w_diff - 1) #*dis
+    return (1. + w_diff * dis_csms)

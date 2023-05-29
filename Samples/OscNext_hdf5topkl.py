@@ -60,6 +60,7 @@ def extract_genie(nutype, set, output):
     # Preparing list of files:
     sample = nutype+set
     filenamelist = glob.glob('/data/ana/LE/oscNext/pass2/genie/level7_v02.00/{0}/oscNext_genie_level7_v02.00_pass2.{0}.*.hdf5'.format(sample))
+    # filenamelist = glob.glob('/data/ana/LE/oscNext/pass2/genie/level7_v02.00/{0}/oscNext_genie_level7_v02.00_pass2.{0}.000329.hdf5'.format(sample))
 
 
     for file in filenamelist:
@@ -207,7 +208,7 @@ def extract_genie(nutype, set, output):
 # filenamelist = glob.glob('/data/ana/LE/oscNext/pass2/genie/level7_v02.00/121122/oscNext_genie_level7_v02.00_pass2.121122.*.hdf5')
 
 # print(filenamelist)
-extract_genie('12','1122', './test.pkl')
+extract_genie('12','1122', '/data/user/tchau/DarkMatter_OscNext/Sample/Simulation/test_hdfReader.pkl')
 #----------------------------------------------------------------------------------------------------------------------
 #Define parameters needed
 #----------------------------------------------------------------------------------------------------------------------
@@ -224,4 +225,4 @@ nutype = options.nutype
 sample = nutype+set
 output = '/data/user/tchau/DarkMatter_OscNext/Sample/Simulation/OscNext_Level7_v02.00_{}_pass2_variables_NoCut.pkl'.format(sample)
 
-extract_genie(nutype, set, output)
+# extract_genie(nutype, set, output)

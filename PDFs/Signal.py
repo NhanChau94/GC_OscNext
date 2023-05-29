@@ -103,10 +103,10 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble
     print("Preparing evaluation grid") 
     ##Equal spacing in the final variables: reco Psi & log10(E_reco), true psi and true E
     trueEeval, recoEeval, truePsieval, recoPsieval = Extend_EvalPoints(Bin["true_energy_center"], Bin["reco_energy_center"], maxEtrue, maxEreco, Bin["true_psi_center"], Bin["reco_psi_center"])  
-    print('Etrue: {}'.format(trueEeval))
-    print('Ereco: {}'.format(recoEeval))
-    print('Psitrue: {}'.format(truePsieval))
-    print('Psireco: {}'.format(recoPsieval))
+    # print('Etrue: {}'.format(trueEeval))
+    # print('Ereco: {}'.format(recoEeval))
+    # print('Psitrue: {}'.format(truePsieval))
+    # print('Psireco: {}'.format(recoPsieval))
     
 
     g_psi_true, g_energy_true, g_psi_reco, g_energy_reco = np.meshgrid(truePsieval, trueEeval,
@@ -240,9 +240,9 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
 
     # Access precomputed response matrix and its grid
     if logEtrue:
-        indict = pkl.load(open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE.pkl".format(MCset), "rb"))
+        indict = pkl.load(open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}_logE.pkl".format(MCset), "rb"))
     else:
-        indict = pkl.load(open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}.pkl".format(MCset), "rb"))
+        indict = pkl.load(open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}.pkl".format(MCset), "rb"))
     if Scramble:
         Resp = indict["Resp_Scr"]
     else:
@@ -257,7 +257,7 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
     Resp_interpolated = dict()
     for nu in nu_types:
         if logEtrue:
-            Resp_interpolated[nu] = EqualGridInterpolator((psitrue, np.log10(Etrue), psireco, np.log10(Ereco)), Resp[nu], order=1)(np.meshgrid(Psievaltrue, np.log10(Evaltrue), Psievalreco, np.log10(Evalreco),  indexing='ij'))
+            Resp_interpolated[nu] = EqualGridInterpolator((psitrue, np.log10(Etrue), psireco, np.log10(Ereco)), Resp[nu], order=1, fill_value=0)(np.meshgrid(Psievaltrue, np.log10(Evaltrue), Psievalreco, np.log10(Evalreco),  indexing='ij'))
         else:
             Resp_interpolated[nu] = EqualGridInterpolator((psitrue, Etrue, psireco, np.log10(Ereco)), Resp[nu], order=1)(np.meshgrid(Psievaltrue, Evaltrue, Psievalreco, np.log10(Evalreco),  indexing='ij'))
     
@@ -353,7 +353,7 @@ def define_weightcut(weight, cut):
     return w_lim
 
 # Compute weights and extract other informations used for evt-by-evt reweight:
-def ComputeWeight(MCdict, Spectra, Jfactor, mass, process="ann", maxE=2000, weight_cut=True):
+def ComputeWeight(MCdict, Spectra, Jfactor, mass, maxE=3000, weight_cut=True):
     nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
     pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
 
@@ -368,7 +368,7 @@ def ComputeWeight(MCdict, Spectra, Jfactor, mass, process="ann", maxE=2000, weig
 
     for nu_type in nu_types:
         loc = np.where( (MCdict["E_true"]<=mass) & (MCdict["nutype"]==pdg_encoding[nu_type]) & (MCdict["E_reco"]<=maxE) )
-        if len(loc[0])==0: 
+        if len(loc[0])==0:
             continue
         ##Sort all variables by increasing true_E values##
         ##NOTE: this is required for spectra interpolation
@@ -422,8 +422,8 @@ def ComputeWeight(MCdict, Spectra, Jfactor, mass, process="ann", maxE=2000, weig
         signal_w = np.append(signal_w, weight)
     return array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec
 
-def KDE_evtbyevt(MCdict, Spectra, Jfactor, mass, bw_method, Bin, Scramble=False, weight_cut=True, mirror=True, process='ann'):
-    array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec = ComputeWeight(MCdict, Spectra, Jfactor, mass, weight_cut=weight_cut, process=process)
+def KDE_evtbyevt(MCdict, Spectra, Jfactor, mass, bw_method, Bin, Scramble=False, weight_cut=True, mirror=True):
+    array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec = ComputeWeight(MCdict, Spectra, Jfactor, mass, weight_cut=weight_cut)
     # Define PID cut:
     # PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
     PID = [[0, 1]]
@@ -515,6 +515,7 @@ class RecoRate:
             tdecay=1,
             type='Resp', 
             PreCompResp=True,
+            interpolate_resp=True,
             spectra='Charon', 
             set='1122', 
             Scramble=False
@@ -528,6 +529,7 @@ class RecoRate:
         self.tdecay = tdecay
         self.type = type
         self.PreCompResp = PreCompResp
+        self.interpolate_resp = interpolate_resp
         self.spectra = spectra
         self.set = set
         self.Scramble = Scramble
@@ -546,8 +548,10 @@ class RecoRate:
             print('*'*20)
             print('Computing Spectra')
             Nu = NuSpectra(self.mass, self.channel, self.process)
-            Nu.nodes=200
-            Nu.bins=200
+            if self.mass >= max(self.bin['true_energy_edges']):
+                Nu.Emax = max(self.bin['true_energy_edges'])
+            Nu.nodes=500
+            Nu.bins=500
 
             if "PPPC4" in self.spectra:
                 spectra_dict = Nu.SpectraPPPC4_AvgOsc()
@@ -596,7 +600,7 @@ class RecoRate:
             if self.process=='ann':
                 factor = (1./(2 * 4*math.pi * self.mass**2))* self.xsec
             elif self.process=='decay':
-                factor = (1./(3 * 4*math.pi * self.mass * self.tdecay))
+                factor = (1./(4*math.pi * self.mass * self.tdecay))
             for nu_type in self.hist['TrueRate'].keys():
                 self.hist['TrueRate'][nu_type] *= factor
         return self.hist['TrueRate']
@@ -614,13 +618,32 @@ class RecoRate:
 
         if self.hist['Resp'] is None:
             if self.PreCompResp:
-                self.hist['Resp'] = RespMatrix_Interpolated(self.set, self.bin, Scramble=self.Scramble)
+                if self.interpolate_resp:
+                    self.hist['Resp'] = RespMatrix_Interpolated(self.set, self.bin, Scramble=self.Scramble)
+                else:
+                    print("*"*20)
+                    print('use directly the precomp grid of response matrix without any interpolation')
+                    print('Not recommend for neutrino line since you might miss the monochomatic peak')
+                  
+                    respdict = pkl.load(open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}_logE.pkl".format(self.set), "rb"))
+                    self.bin = respdict['Bin']
+                    gridEtrue = np.meshgrid(self.bin['true_psi_center'], self.bin['true_energy_center'], 
+                                    self.bin['reco_psi_center'], self.bin['reco_energy_center'], indexing='ij')[1]               
+            
+                    # precomputed response as dR/d(E_true), but the true E bin is in log -> change to dR/dlogE = E*dR/dE
+                    if self.Scramble:                        
+                        self.hist['Resp'] = respdict['Resp_Scr']
+                    else:
+                        self.hist['Resp'] = respdict['Resp']
+                    for nu_type in self.hist['Resp'].keys():
+                        self.hist['Resp'][nu_type] *= gridEtrue
+
             else:
                 print('Compute Response Matrix from scratch (will take ~6-7 minutes!)')
                 MC = self.GetMC()
                 self.hist['Resp'] = KDE_RespMatrix(MC, self.bin, 'ISJ', maxEtrue=self.mass*1.25, maxEreco=1000, Scramble=self.Scramble)
 
-            # Renormalize to the total weight 
+            # Renormalize to the total weight (equal to the numerical integration of dR/dx in case equal binning in x)
             MCcut = self.GetMC()
             for nu_type in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
@@ -656,15 +679,15 @@ class RecoRate:
             self.hist['RecoRate']= KDE_evtbyevt(MC, spectra_dict, Jfactor, self.mass, 'ISJ', self.bin, Scramble=self.Scramble)
         
         elif self.type=='Resp':
-            Rate = self.ComputeTrueRate()
             Resp = self.ComputeResp()                        
+            Rate = self.ComputeTrueRate()
             self.hist['RecoRate'] = np.zeros((len(self.bin['reco_psi_center']), len(self.bin['reco_energy_center'])))
             for nutype in ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]:
                 self.hist['RecoRate'] += np.tensordot(Resp[nutype], Rate[nutype], axes=([0,1], [0,1]))
             # self.hist['RecoRate'] *= (1./(2 * 4*math.pi * self.mass**2)) move this factor to truerate
-    
+
         else:
-            print("ERROR: Choose self.type among evtbyevt and Resp")
+            print("ERROR: Choose self.type among evtbyevt, Resp, and Resp_without_interpolation")
             sys.exit(1)
     
         return self.hist['RecoRate']

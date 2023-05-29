@@ -2,22 +2,14 @@
 author : N. Chau
 Related functions for kde implementaion to build pdf
 """
-import sys
-import math
-import pickle as pkl
+
 import numpy as np
-import scipy
-from scipy.interpolate import pchip_interpolate
 # FFT KDE:
 from KDEpy import FFTKDE
 from KDEpy.bw_selection import improved_sheather_jones
 
-# sklearn:
-
 # sklearn
-from scipy.stats import gaussian_kde
 from sklearn.neighbors import KernelDensity
-from sklearn.model_selection import GridSearchCV
 
 
 #############################################################################
@@ -32,7 +24,7 @@ def kde_FFT(x, x_grid, bandwidth=0.03, weights=None, logscale=None):
         # Implementation of ISJ in > 1D following discussion here:
         # https://github.com/tommyod/KDEpy/issues/81
         # Assuming each dimension has separate bw values and no cross-term in bw matrix
-        # dimension:
+        # Nevertheless seem not to work in log scale
         n = x.shape[1]
         print('dimension: {}'.format(n))
         bw_array = np.zeros(n)
@@ -107,7 +99,7 @@ def Extend_EvalPoints(E_true, E_reco, maxEtrue, maxEreco, psi_true, psi_reco):
     logEreco_width = np.log10(E_reco[1]) - np.log10(E_reco[0])
     while E_reco[-1]<maxEreco:
         E_reco = np.append(E_reco, pow(10, np.log10(E_reco[-1])+logEreco_width))
-    while E_reco[0]>0.99:    
+    while E_reco[0]>0.5:    
         E_reco = np.append(pow(10, np.log10(E_reco[0])-logEreco_width), E_reco)
     
 
@@ -131,10 +123,78 @@ def Extend_EvalPoints(E_true, E_reco, maxEtrue, maxEreco, psi_true, psi_reco):
 #############################################################################
 # sklearn kde
 #############################################################################
-def kde_sklearn(x, x_grid, bandwidth=0.03, weight=None, **kwargs):
+def kde_sklearn(x, x_grid, bandwidth=0.03, weights=None, **kwargs):
     """Kernel Density Estimation with Scikit-learn"""
     kde_skl = KernelDensity(bandwidth=bandwidth, **kwargs)
-    kde_skl.fit(x, sample_weight=weight)
+    kde_skl.fit(x, sample_weight=weights)
     # score_samples() returns the log-likelihood of the samples
     log_pdf = kde_skl.score_samples(x_grid)
     return np.exp(log_pdf)
+
+
+
+#############################################################################
+# evt by evt kde on reconstruction space: reco psi, log10(reco energy)
+#############################################################################
+def kde_reco(array_recopsi, array_recoE, Bin, weights=None, method='FFT', bandwidth='ISJ', mirror=True):
+    Psireco_edges = Bin["reco_psi_edges"]
+    Ereco_edges = Bin["reco_energy_edges"]
+
+    if method=='FFT':
+        psiE_train = np.vstack([array_recopsi, np.log10(array_recoE)]) 
+        trueEeval, recoEeval, truePsieval, recoPsieval = Extend_EvalPoints(Bin["true_energy_center"], Bin["reco_energy_center"], np.max(array_recoE), np.max(array_recoE), Bin["true_psi_center"], Bin["reco_psi_center"])  
+        g_psi_reco, g_energy_reco = np.meshgrid(recoPsieval, recoEeval, indexing='ij')                      
+        psi_eval_reco = g_psi_reco.flatten()
+        E_eval_reco = g_energy_reco.flatten()
+        psiE_eval = np.vstack([psi_eval_reco, np.log10(E_eval_reco)])
+
+        if mirror:
+            print('apply reflection at psi=0')    
+            psiE_train=MirroringData(psiE_train, {0:0})
+            # extend grid point to contain the mirror data
+            recoPsieval_width = recoPsieval[1] - recoPsieval[0]
+            while recoPsieval[0]>-180.:
+                recoPsieval=np.append(recoPsieval[0]-recoPsieval_width, recoPsieval)
+            
+            g_psi_reco, g_energy_reco = np.meshgrid(recoPsieval, recoEeval, indexing='ij')                      
+            psi_eval_reco = g_psi_reco.flatten()
+            E_eval_reco = g_energy_reco.flatten()
+            psiE_eval = np.vstack([psi_eval_reco, np.log10(E_eval_reco)])   
+
+        # if (np.max(psiE_eval[0])<np.max(psiE_train[0])): print('psi max range not cover data')
+        # if (np.min(psiE_eval[0])>np.min(psiE_train[0])): 
+        #     print('psi min range not cover data')
+        #     print(np.min(psiE_eval[0]))
+        #     print(np.min(psiE_train[0]))
+        # if (np.max(psiE_eval[1])<np.max(psiE_train[1])): print('E max range not cover data')
+        # if (np.min(psiE_eval[1])>np.min(psiE_train[1])): print('E min range not cover data')
+        # print(np.min(psiE_train[1]))
+        kde_w = kde_FFT(psiE_train.T, psiE_eval.T
+                    ,bandwidth=bandwidth, weights=weights)
+        
+        H = np.histogram2d(psi_eval_reco, E_eval_reco,
+                            bins = (Psireco_edges, Ereco_edges),
+                            weights=kde_w)[0]
+    elif method=='sklearn':
+        psiEtrain = np.vstack([np.log10(array_recopsi), np.log10(array_recoE)])
+        g_psi_reco, g_energy_reco = np.meshgrid(Bin['reco_psi_center'], Bin['reco_energy_center'], indexing='ij')                      
+        psi_eval_reco = g_psi_reco.flatten()
+        E_eval_reco = g_energy_reco.flatten()
+        psiE_eval = np.vstack([np.log10(psi_eval_reco), np.log10(E_eval_reco)])
+
+        kde_w = kde_sklearn(psiEtrain.T, psiE_eval.T
+                    ,bandwidth=bandwidth, weights=weights)
+        H = np.histogram2d(psi_eval_reco, E_eval_reco,
+                        bins = (Psireco_edges, Ereco_edges),
+                        weights=kde_w)[0]
+        H = H/g_psi_reco    
+
+    # Renormalized to make sure total number of weight/events does not change
+    loc = np.where( (array_recoE>=min(Ereco_edges)) &  (array_recoE<=max(Ereco_edges))
+                    & (array_recopsi>=min(Psireco_edges)) &  (array_recopsi<=max(Psireco_edges)) )
+    if weights==None:
+        norm = len(array_recoE[loc])
+    else:
+        norm = np.sum(weights[loc])    
+
+    return H/np.sum(H) * norm

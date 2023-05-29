@@ -2,6 +2,14 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 import math
 
+
+# Global constant here (to avoid hard code repeated)
+# GC location in RA and Dec [in deg]:
+GCRA = 266.4167
+GCDec = -29.0078
+
+
+
 # 4D Multilinear interpolation
 
 # Regular grid:
@@ -55,9 +63,9 @@ def RegularGrid_2D(x, values, xinterp):
 ## Get the open angle [rad] from GC, psi from RA and DEC [rad]
 
 def psi_f(RA,decl):
-    return np.arccos(np.cos(np.pi/2.-(-29.*np.pi/180))*np.cos(np.pi/2.-decl)
-                      +np.sin(np.pi/2.-(-29.*np.pi/180))*np.sin(np.pi/2.-decl)*
-                       np.cos(RA-266.*np.pi/180))
+    return np.arccos(np.cos(np.pi/2.-(GCDec*np.pi/180))*np.cos(np.pi/2.-decl)
+                      +np.sin(np.pi/2.-(GCDec*np.pi/180))*np.sin(np.pi/2.-decl)*
+                       np.cos(RA-GCRA*np.pi/180))
 
 
 #------------------------------------------------------------

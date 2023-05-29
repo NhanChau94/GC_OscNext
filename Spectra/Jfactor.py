@@ -15,9 +15,12 @@ def extract_values(filename, pos1, pos2):
     val1 = np.array([])
     val2 = np.array([])
     for l in value_file:
-        line = l.split("   ")
-        #print (line)
-        if "#" in line[0]:
+        line = l.split()
+        # print (line)
+        try:
+            float(line[pos1])
+            float(line[pos2])
+        except ValueError:
             continue
         val1 = np.append(val1, np.float64(line[pos1].strip()))
         val2 = np.append(val2, np.float64(line[pos2].strip()))

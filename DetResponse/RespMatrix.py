@@ -172,7 +172,7 @@ def RespMatrix_FFTkde(MCcut, Bin, mirror=True, Scramble=False, weight_cut=True):
             # if np.min(N)==0:
             #     return 'There is an empty bin!!'                    
             # H = H/N[0]
-            H = H/grid[1]
+            H = H/grid[1] #(-> this return the shape of dR/(dE_true dpsiTrue dpsireco dEreco))
             if mirror:
                 norm = np.sum(w)/(2*np.sum(H))
             else:
@@ -204,4 +204,4 @@ outdict = dict()
 outdict['Bin'] = Bin
 outdict['Resp'] = Resp
 outdict['Resp_Scr'] = Resp_Scr
-pkl.dump(outdict, open("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/PreComp/Resp_MC{}_logE.pkl".format(set), "wb"))
+pkl.dump(outdict, open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}_logE.pkl".format(set), "wb"))

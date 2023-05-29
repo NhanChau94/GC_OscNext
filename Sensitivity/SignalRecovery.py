@@ -24,9 +24,10 @@ from llh import LikelihoodRatioTest
 
 parser = OptionParser()
 # i/o options
+parser.add_option("--process", type = 'string', action = "store", default = "ann", metavar  = "<process>", help = "process: ann or decay",)
 parser.add_option("-c", "--channel", type = "string", action = "store", default = "WW", metavar  = "<channel>", help = "Dark matter channel",)
 parser.add_option("-p", "--profile", type = 'string', action = "store", default = "NFW", metavar  = "<profile>", help = "GC profile",)
-parser.add_option("-m", "--mass", type = float, action = "store", default = None, metavar  = "<mass>", help = "mass value",)
+parser.add_option("-m", "--mass", type = float, action = "store", default = 100, metavar  = "<mass>", help = "mass value",)
 parser.add_option("-s", "--spectra", type = 'string', action = "store", default = "Charon", metavar  = "<spectra>", help = "Spectra: Charon or PPPC4",)
 parser.add_option("--mcfit", type = 'string', action = "store", default = "1122", metavar  = "<mcfit>", help = "MC set use for fitting",)
 parser.add_option("--mcinj", type = 'string', action = "store", default = "1122", metavar  = "<mcinj>", help = "MC set use for the injection",)
@@ -34,13 +35,14 @@ parser.add_option("--Jfit", type = 'string', action = "store", default = "nomina
 parser.add_option("--Jinj", type = 'string', action = "store", default = "nominal", metavar  = "<Jinj>", help = "Jfactor use for the injection",)
 parser.add_option("--llh", type = 'string', action = "store", default = "SignalSub", metavar  = "<llh>", help = "LLH type",)
 
-parser.add_option("--gcinj", type = int, action = "store", default = 0, metavar  = "<gcinj>", help = "if gc is injected (0:no, 1:yes)",)
-parser.add_option("--gcmodel", type = int, action = "store", default = 0, metavar  = "<gcmodel>", help = "if gc is accounted in the fit model (0:no, 1:yes)",)
+parser.add_option("--gpmodel", type = "string", action = "store", default = None, metavar  = "<gpmodel>", help = "GP model in the fit, use among: pi0, pi0_IC, KRA50, KRA50_IC, KRA5, KRA5_IC, None",)
+parser.add_option("--gpinj", type = "string", action = "store", default = None, metavar  = "<gpinj>", help = "GP model used for injection, use amog:  pi0, pi0_IC, KRA50, KRA50_IC, KRA5, KRA5_IC, None",)
+parser.add_option("--fixGP", type = int, action = "store", default = 1, metavar  = "<fixGP>", help = "in case of including GP, fix it (1) or fit/marginalize it (0)",)
 
 
 (options, args) = parser.parse_args()
 
-
+process = options.process
 channel = options.channel
 profile = options.profile
 spectra = options.spectra
@@ -50,16 +52,20 @@ Jfit = options.Jfit
 Jinj = options.Jinj
 mass = options.mass
 llh = options.llh
-gcinj = options.gcinj
-gcmodel = options.gcmodel
+gpinj = options.gpinj
+gpmodel = options.gpmodel
+fixGP = bool(options.fixGP)
 
-if mass < 3000:
-    Bin = Std_Binning(mass, N_Etrue=300)
+if process=='ann': Etrue_max = mass
+if process=='decay': Etrue_max = mass/2.
+
+if Etrue_max < 3000:
+    Bin = Std_Binning(Etrue_max, N_Etrue=300)
 else:
     Bin = Std_Binning(3000, N_Etrue=500)
-
+    
 # Compute DM rate
-Reco = RecoRate(channel, mass, profile, Bin, type="Resp", spectra='Charon', set=mcfit)
+Reco = RecoRate(channel, mass, profile, Bin,process=process, type="Resp", spectra='Charon', set=mcfit)
 # Different options for Jfactor
 if Jfit!='nominal':
     MyJ = Jf(profile=profile)
@@ -87,15 +93,12 @@ Reco.Scramble = True
 Reco.set=mcinj
 DMRateScr_inj=Reco.ComputeRecoRate()
 
-# Bkg and GC astro rate
+# Bkg
 exposure = 8* 365.*24.* 60.* 60.
-Bkg = ScrambleBkg(Bin, bw="ISJ", oversample=10)
+Bkg = ScrambleBkg(Bin, bandwidth="ISJ", oversample=10)
 BurnSample = DataHist(Bin)
 Ndata = 10*np.sum(BurnSample) # expected total number of data after 8 years
 BkgRate = 10*np.sum(BurnSample)*Bkg/(np.sum(Bkg))/(exposure)
-
-GCRate = GC_RecoRate(Bin, method='evtbyevt', set='1122', scrambled=False)[0]
-GCRateScr = GC_RecoRate(Bin, method='evtbyevt', set='1122', scrambled=True)[0]
 
 
 # Create the PDF object
@@ -105,67 +108,101 @@ ScrSignalPDF = PdfBase(DMRateScr.flatten()/np.sum(DMRateScr.flatten()), name="Sc
 SignalPDF_inj = PdfBase(DMRate_inj.flatten()/np.sum(DMRate_inj.flatten()), name="SignalPDF_inj")
 ScrSignalPDF_inj = PdfBase(DMRateScr_inj.flatten()/np.sum(DMRateScr_inj.flatten()), name="ScrSignalPDF_inj")
 
-GCPDF = PdfBase(GCRate.flatten()/np.sum(GCRate.flatten()), name="GC")
-ScrGCPDF = PdfBase(GCRateScr.flatten()/np.sum(GCRateScr.flatten()), name="GCScr")
-
 # Assuming the Scr Bkg from burn sample is the atm Bkg
 BkgPDF = PdfBase(BkgRate.flatten()/np.sum(BkgRate.flatten()), name="BkgAtm")
 
-# The data with the assumption of signal fraction xi_true and galactic fraction gc_true:
-xi_true = np.sum(DMRate*1e-23)/(np.sum(BkgRate))
-gc_true = np.sum(GCRate)/(np.sum(BkgRate))
-dm_inj = Parameter(value=xi_true, limits=(0,1), fixed=True, name="dm_inj")
-gc_inj = Parameter(value=gc_true, limits=(0,1), fixed=True, name="gc_inj")
-
+# The data with the assumption of signal fraction and galactic fraction gc_true:
+dm_inj = Parameter(value=0., limits=(0,1), fixed=True, name="dm_inj")
 
 # use for model fitting:
 dm_H1 = Parameter(value=0., limits=(0,1), fixed=False, name="dm_H1")
-gc_H1 = Parameter(value=gc_true, limits=(0,1), fixed=True, name="gc_H1")
-dm_H0 = Parameter(value=xi_true, limits=(0,1), fixed=True, name="dm_H0")
-gc_H0 = Parameter(value=gc_true, limits=(0,1), fixed=True, name="gc_H0")
+dm_H0 = Parameter(value=0., limits=(0,1), fixed=True, name="dm_H0")
 
-# Set gc fraction to zero in case it is not injected or included in the fit
-if gcinj==0:
-    print('\n no GC in the pseudo data \n')
-    gc_inj.value=0
-if gcmodel==0:
-    print('\n no GC in the fit model \n')
-    gc_H1.value=0
-    gc_H0.value=0
-
-
-pseudo_data = dm_inj* SignalPDF_inj + gc_inj* GCPDF + (1-dm_inj-gc_inj)* BkgPDF
-
+pseudo_data = dm_inj* SignalPDF_inj + (1-dm_inj)* BkgPDF
 # Scramble bkg now yields:
-ScrBkgPDF = dm_inj* ScrSignalPDF_inj + gc_inj* ScrGCPDF + (1-dm_inj-gc_inj)* BkgPDF
-
-# llh model
+ScrBkgPDF = dm_inj* ScrSignalPDF_inj + (1-dm_inj)* BkgPDF
 if llh=='SignalSub':
-    modelH0 = dm_H0* SignalPDF + gc_H0* GCPDF + ScrBkgPDF - dm_H0* ScrSignalPDF - gc_H0* ScrGCPDF
-    modelH1 = dm_H1* SignalPDF + gc_H1* GCPDF + ScrBkgPDF - dm_H1* ScrSignalPDF - gc_H1* ScrGCPDF
-elif llh=='Poisson':
-    modelH0 = dm_H0* SignalPDF + gc_H0* GCPDF + (1-dm_H0-gc_H0)*ScrBkgPDF
-    modelH1 = dm_H1* SignalPDF + gc_H1* GCPDF + (1-dm_H1-gc_H1)*ScrBkgPDF
+    modelH0 = dm_H0* SignalPDF + ScrBkgPDF - dm_H0* ScrSignalPDF
+    modelH1 = dm_H1* SignalPDF + ScrBkgPDF - dm_H1* ScrSignalPDF
+else:
+    modelH0 = dm_H0* SignalPDF + (1-dm_H0)*ScrBkgPDF
+    modelH1 = dm_H1* SignalPDF + (1-dm_H1)*ScrBkgPDF
+
+##############################################################
+# in case including GP in the model:
+# Different models for GP
+scales = {'pi0':1, 'pi0_IC':4.95, 'KRA50':1., 'KRA50_IC':0.37, 'KRA5':1., 'KRA5_IC':0.55}
+template = {'pi0':'Fermi-LAT_pi0_map.npy', 'pi0_IC':'Fermi-LAT_pi0_map.npy', 
+                'KRA50':'KRA-gamma_maps_energies.tuple.npy', 'KRA50_IC':'KRA-gamma_maps_energies.tuple.npy', 
+                'KRA5':'KRA-gamma_5PeV_maps_energies.tuple.npy', 'KRA5_IC':'KRA-gamma_5PeV_maps_energies.tuple.npy'}
+
+if gpinj!=None and gpinj!='None':
+
+    GPRate_inj = GP_RecoRate(Bin, template='/data/user/tchau/DarkMatter_OscNext/GP_template/'+template[gpinj], scale=scales[gpinj])
+    GPRate_inj_scr = GP_RecoRate(Bin, template='/data/user/tchau/DarkMatter_OscNext/GP_template/'+template[gpinj], scale=scales[gpinj], scrambled=True)
+
+    GPPDF_inj = PdfBase(GPRate_inj.flatten()/np.sum(GPRate_inj.flatten()), name="GC_inj")
+    ScrGPPDF_inj = PdfBase(GPRate_inj_scr.flatten()/np.sum(GPRate_inj_scr.flatten()), name="GCScr_inj")
+
+    gc_true = np.sum(GPRate_inj)*exposure/Ndata
+    gc_inj = Parameter(value=gc_true, limits=(0,1), fixed=True, name="gc_inj")
+    pseudo_data = dm_inj* SignalPDF + gc_inj* GPPDF_inj + (1-dm_inj-gc_inj)* BkgPDF
+    ScrBkgPDF = dm_inj* ScrSignalPDF + gc_inj* ScrGPPDF_inj + (1-dm_inj-gc_inj)* BkgPDF
+
+if gpmodel!=None and gpmodel!='None':
+    # models = ['pi0', 'pi0_IC', 'KRA50', 'KRA50_IC', 'KRA5', 'KRA5_IC']
+    
+    GPRate_model = GP_RecoRate(Bin, template='/data/user/tchau/DarkMatter_OscNext/GP_template/'+template[gpmodel], scale=scales[gpmodel])
+    GPRate_model_scr = GP_RecoRate(Bin, template='/data/user/tchau/DarkMatter_OscNext/GP_template/'+template[gpmodel], scale=scales[gpmodel], scrambled=True)
+
+    GPPDF_model = PdfBase(GPRate_model.flatten()/np.sum(GPRate_model.flatten()), name="GC_model")
+    ScrGPPDF_model = PdfBase(GPRate_model_scr.flatten()/np.sum(GPRate_model_scr.flatten()), name="GCScr_model")
+
+    gc_model = np.sum(GPRate_model)*exposure/Ndata
+    gc_H1 = Parameter(value=gc_model, limits=(gc_model* (1.-0.95), gc_model* (1.+0.95)), fixed=fixGP, name="gc_H1")
+    gc_H0 = Parameter(value=gc_model, limits=(0,1), fixed=fixGP, name="gc_H0")
+
+    # Add the GP to the LLR model
+    if llh=='SignalSub':
+        modelH0 = dm_H0* SignalPDF + gc_H0* GPPDF_model + ScrBkgPDF - dm_H0* ScrSignalPDF - gc_H0* ScrGPPDF_model
+        modelH1 = dm_H1* SignalPDF + gc_H1* GPPDF_model + ScrBkgPDF - dm_H1* ScrSignalPDF - gc_H1* ScrGPPDF_model
+    else:
+        modelH0 = dm_H0* SignalPDF + gc_H0* GPPDF_model + (1-dm_H0-gc_H0)*ScrBkgPDF
+        modelH1 = dm_H1* SignalPDF + gc_H1* GPPDF_model + (1-dm_H1-gc_H1)*ScrBkgPDF
 
 
-f_inj = np.linspace(0, 0.005, 50)
+
+###################################################################
+# Scan DM injection fraction
+
+# Computing 90 CL value of signal injection
 ds = DataSet()
-signal = dict()
+ds.asimov(Ndata, pseudo_data)
 lr = LikelihoodRatioTest(model = modelH1, null_model = modelH0)
+lr.data = ds
+xi_CL = lr.upperlimit_llhinterval('dm_H1', 'dm_H0', 90)  
 
+f_inj = np.linspace(0, 2*xi_CL, 50)
+signal = dict()
+
+
+
+ntrial = 500
 for inj in f_inj:
     # change the signal injection:
     pseudo_data.parameters["dm_inj"].value = inj
-    if llh=='SignalSub':
-        lr.models['H1'].parameters["dm_inj"].value = inj
+    lr.models['H1'].parameters["dm_inj"].value = inj
     signal[inj] = np.array([])
-    for n in range(500):
+    for n in range(ntrial):
         ds.sample(Ndata, pseudo_data)
  
         lr.data = ds
         lr.fit("H1")
         fitval = lr.models['H1'].parameters["dm_H1"].value
         signal[inj] = np.append(signal[inj], fitval)
+        # print("#"*30)
+        # print("injection: {}".format(inj))
+        # print("fit value: {}".format(fitval))
 
 #Extracting percentile: 
 mean = np.array([])
@@ -176,8 +213,8 @@ up1 = np.array([])
 up2 = np.array([])
 
 for inj in f_inj:
-    arr1 = np.percentile(signal[inj], [32, 50, 68])
-    arr2 = np.percentile(signal[inj], [10, 50, 90])
+    arr1 = np.percentile(signal[inj], [16, 50, 84])
+    arr2 = np.percentile(signal[inj], [5., 50., 95.])
 
     mean = np.append(mean, arr1[1])
     low1 = np.append(low1, arr1[0])
@@ -191,15 +228,14 @@ output['90'] = up2
 output['32'] = low1
 output['68'] = up1
 output['f_inj'] = f_inj
-output['gcinj'] = f_inj
-output['gcmodel'] = gc_H1.value
-output['gcinj'] = gc_inj.value
+output['xi_CL'] = xi_CL
 
-
+print(f_inj)
+print(mean)
 
 if Jinj=='nominal' and Jfit=='nominal': #normal Jfactor case
-    path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/SignalRecovery/{}_{}_{}GeV_MCfit{}_MCinj{}_llh{}_gcinj{}_gcmodel{}.pkl'.format(channel, profile, mass, mcfit, mcinj, llh, gcinj, gcmodel)
+    path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/SignalRecovery/{}_{}_{}_{}GeV_MCfit{}_MCinj{}_llh{}_gcinj{}_gcmodel{}_fixgp{}.pkl'.format(process, channel, profile, mass, mcfit, mcinj, llh, gpinj, gpmodel, fixGP)
 else:
-    path = '/data/user/tchau/Sandbox/GC_OscNext/Sensitivity/SignalRecovery/{}_{}_{}GeV_MCfit{}_MCinj{}_Jfit{}_Jinj{}_llh{}_gcinj{}_gcmodel{}.pkl'.format(channel, profile, mass, mcfit, mcinj, Jfit, Jinj, llh, gcinj, gcmodel)
+    path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/SignalRecovery/{}_{}_{}_{}GeV_MCfit{}_MCinj{}_Jfit{}_Jinj{}_llh{}_gcinj{}_gcmodel{}_fixgp{}.pkl'.format(process, channel, profile, mass, mcfit, mcinj, Jfit, Jinj, llh, gpinj, gpmodel, fixGP)
 
 pkl.dump(output, open(path, "wb"))
