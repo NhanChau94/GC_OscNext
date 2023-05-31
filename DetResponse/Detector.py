@@ -142,7 +142,7 @@ def GroupBinning(true_energy_edges, true_psi_edges, true_energy_center, true_psi
 
     return Bin
 
-def Std_Binning(ETruemax, N_Etrue = 100, N_psitrue = 50, N_Ereco=50, N_psireco = 18):
+def Std_Binning(ETruemax, N_Etrue = 300, N_psitrue = 50, N_Ereco=50, N_psireco = 18):
 
     # Binning:
     # E true

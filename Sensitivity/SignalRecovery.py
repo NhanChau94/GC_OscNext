@@ -67,10 +67,10 @@ if process=='ann': Etrue_max = mass
 if process=='decay': Etrue_max = mass/2.
 
 if Etrue_max < 3000:
-    Bin = Std_Binning(Etrue_max, N_Etrue=300)
+    Bin = Std_Binning(Etrue_max)
 else:
     # OscNext only select events up to ~ 3TeV
-    Bin = Std_Binning(3000, N_Etrue=500)
+    Bin = Std_Binning(3000)
     
 #############################################################################################################
 #   1 - Define Signal expectation object and compute the signal expectation

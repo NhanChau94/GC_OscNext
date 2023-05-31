@@ -163,7 +163,7 @@ if mass_default:
 #############################################################################################################
 #   1 -  Binning scheme, Signal expectation object, Bkg PDF, Galactic Plane injection if considered
 #
-Bin = Std_Binning(300, N_Etrue=100)
+Bin = Std_Binning(300) # just a dummy mass value 300GeV
 Reco = RecoRate(channel, 300, profile, Bin, process=process,type="Resp", spectra='Charon', set=mc)
 
 if bkg=='FFT':
@@ -235,9 +235,9 @@ for mass in masses:
     if process=='decay': Etrue_max = mass/2.
 
     if Etrue_max < 3000:
-        Bin = Std_Binning(Etrue_max, N_Etrue=300)
+        Bin = Std_Binning(Etrue_max)
     else:
-        Bin = Std_Binning(3000, N_Etrue=500)
+        Bin = Std_Binning(3000)
     
     # if Etrue_max < 2000:
     #     Bin = Std_Binning(Etrue_max, N_Etrue=300)
