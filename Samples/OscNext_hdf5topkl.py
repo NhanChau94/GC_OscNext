@@ -1,5 +1,5 @@
-#!/bin/sh /cvmfs/icecube.opensciencegrid.org/py3-v4.1.0/icetray-start
-#METAPROJECT /data/user/niovine/software/combo_py3/build/
+#!/bin/sh /cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/icetray-start
+#METAPROJECT /cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/RHEL_7_x86_64/metaprojects/icetray/v1.5.1/
 
 import numpy as np
 import pickle as pkl
@@ -7,11 +7,14 @@ from icecube import dataio, dataclasses, astro
 import time, sys
 from os.path import isfile
 import random
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils")
-from Utils import *
 import glob
 import tables
 from optparse import OptionParser
+
+base_path=os.getenv('GC_DM_BASE')
+sys.path.append(f"{base_path}/Utils")
+from Utils import *
+
 
 def extract_genie(nutype, set, output):
 

@@ -12,7 +12,8 @@ import random
 from optparse import OptionParser
 import glob
 
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils")
+base_path=os.getenv('GC_DM_BASE')
+sys.path.append(f"{base_path}/Utils")
 from Utils import *
 
 
