@@ -7,6 +7,7 @@ Galactic Center DM search with IceCube using OscNext event selection.
 - [`KDEpy`](https://github.com/tommyod/KDEpy): for performing FFTKDE - a very fast convolution-based kde estimation
 - [`χarον (charon)`](https://github.com/icecube/charon): an IceCube package to organize calculations of neutrinos from dark matter annihilation/decay.
 
+This code has been tested on IceCube's computing cluster in Madison with the CVMFS environment: `eval `/cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/setup.sh`` (Python 3.10.2)
 ## Structure of the code
 Each directories contain scripts for following purposes:
 - DMfit: package to perform likelihood method for Dark Matter searches in IceCube
