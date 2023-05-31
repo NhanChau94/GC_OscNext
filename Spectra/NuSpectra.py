@@ -160,6 +160,7 @@ def oscillate_spectra(spectra, nutypes, th12, th13, th23, delta):
 class NuSpectra:
     """
     Class for computing neutrino spectra using either PPPC4 or Charon.
+    Oscillation params: default to Nufit 5.1
     
     Parameters:
     mass (float, optional): mass of the dark matter particle (default: 100)
@@ -191,7 +192,7 @@ class NuSpectra:
             dm21=7.42e-5,
             dm31=2.515e-3,
             delta=194.,
-            nodes=100,
+            nodes=300,
             bins=300,
             Emin=1.,
             Emax=None,
@@ -218,11 +219,6 @@ class NuSpectra:
         self.Emax=Emax
         self.logscale=logscale
         self.interactions=interactions
-        # self.fluxCharon=propa.NuFlux(self.channel, self.mass, self.nodes, self.Emin, self.Emax, self.bins,
-        #                 self.process, self.logscale, self.interactions,
-        #                 self.theta12, self.theta13, self.theta23,
-        #                 self.dm21, self.dm31, self.delta)
-
         self.nurate=dict()
 
     # Dedicated function for setting nodes and binnings -> need for Charon:

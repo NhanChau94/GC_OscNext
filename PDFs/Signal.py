@@ -2,18 +2,19 @@
 author : N. Chau
 Creating signal event distribution + pdfs with a detector response
 """
-import sys
+import sys, os
 import math
 import pickle as pkl
 import numpy as np
 import scipy
 from scipy.interpolate import pchip_interpolate
 
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Spectra/")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs/")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DMfit/DMfit")
+base_path=os.getenv('GC_DM_BASE')
+data_path=os.getenv('GC_DM_DATA')
+sys.path.append(f"{base_path}/Utils/")
+sys.path.append(f"{base_path}/Spectra/")
+sys.path.append(f"{base_path}/DetResponse/")
+sys.path.append(f"{base_path}/PDFs/")
 
 from Detector import *
 from Utils import *
@@ -21,6 +22,12 @@ from Interpolate import *
 from NuSpectra import *
 from Jfactor import *
 from KDE_implementation import *
+
+
+
+#############################################################################
+# Set of functions for spectra and Jfactor
+#############################################################################
 
 # set low values to zero in case needed
 def cutspectra(spec, cut):
@@ -33,10 +40,10 @@ def cutspectra(spec, cut):
 
 
 ##---------------------------------------------##
-##Interpolate the Jfactor at the psi values used in response functions
+##Interpolate the Jfactor at the desired psi values
 ##Required:
-##  -  Precomputed Jfactor file
-##  -  psi values for interpolation
+##  -  Jfactor: Precomputed Jfactor file
+##  -  psival: psi values for interpolation
 ##Output:
 ##  -  Interpolated Jfactor
 ##---------------------------------------------##
@@ -47,6 +54,15 @@ def Interpolate_Jfactor(Jfactor, psival):
 
     return interp_Jpsi
 
+##---------------------------------------------##
+##Interpolate the Spectra at the desired energy values
+##Required:
+##  -  spectra: Precomputed spectra (dictionary of each neutrino flavour)
+##  -  Eval: energy values for interpolation
+##  -  Emax: maximum energy considered (usually mass value for annihilation and mass/2. for decay)
+##Output:
+##  -  Interpolated spectra
+##---------------------------------------------##
 
 def Interpolate_Spectra(spectra, Eval, Emax, cutlow=True):
 
@@ -95,6 +111,24 @@ def TrueRate(Spectra, Jfactor):
 
 
 
+#############################################################################
+# Set of functions for response matrix cimputation from MC
+#############################################################################
+
+##---------------------------------------------##
+##Compute the Response Matrix
+##Required:
+##  -  MCcut: MC events
+##  -  Bin: binning scheme
+##  -  bw_method: bandwidth method for kde
+##  -  maxEtrue: maximum true energy considered
+##  -  maxEreco: maximum reco energy considered
+##  -  Scramble: if scrambling the Right Ascension
+##  -  mirror: if using reflection at psi=0
+##Output:
+##  -  return the pdf of response matrix (differential of response matrix):
+##     Resp[nutype][psi][E] = d(OneWeight/N_evt)/(dEtrue dpsitrue dpsireco d(log10 Ereco)) normalized to 1
+##---------------------------------------------##
 
 
 def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble=False, mirror=True):
@@ -108,7 +142,6 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble
     # print('Psitrue: {}'.format(truePsieval))
     # print('Psireco: {}'.format(recoPsieval))
     
-
     g_psi_true, g_energy_true, g_psi_reco, g_energy_reco = np.meshgrid(truePsieval, trueEeval,
                                                             recoPsieval, recoEeval, indexing='ij')                      
     psi_eval_true = g_psi_true.flatten()
@@ -116,26 +149,20 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble
     psi_eval_reco = g_psi_reco.flatten()
     E_eval_reco = g_energy_reco.flatten()
 
-    ##Evaluate the KDE in log(Psi)-log10E
-    # psiE_eval = np.vstack([np.log(psi_eval_true), E_eval_true, 
-    #                     np.log(psi_eval_reco), np.log10(E_eval_reco)])
+    ##Evaluate the KDE in log(Psi)-E
     psiE_eval = np.vstack([psi_eval_true, E_eval_true, 
             psi_eval_reco, np.log10(E_eval_reco)])
-    # psiE_eval = np.vstack([psi_eval_true, E_eval_true, 
-    #         psi_eval_reco, E_eval_reco])  
 
 
-    # Separate MC by each channel nutype->PID:
+
+    # Separate MC by each channel nutype (for now 1PID)
     nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    # nu_types = ["nu_mu"]
-
     pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
     # PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
     PID = [[0.,1.]]
     Resp = dict()
-    pidbin = 0
     for pid in PID:
-        print("Computing {} PID bin".format(pid))
+        # print("Computing {} PID bin".format(pid))
         # Resp[pidbin] = dict()
         # pidbin += 1
         for nu_type in nu_types:
@@ -203,9 +230,6 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble
             print("Evaluating KDE.....")    
 
             kde_w = kde_FFT(psiE_train.T, psiE_eval.T, bandwidth=bw_method, weights=w)
-            #Needs to be divided by evaluation angle
-            # kde_weight = kde_w.reshape(psi_eval_true.shape)
-            # kde_weight = kde_w/(psi_eval_true * psi_eval_reco)
             kde_weight = kde_w
                                     
             # Fill into histogram:
@@ -231,6 +255,16 @@ def KDE_RespMatrix(MCcut, Bin, bw_method, maxEtrue=3000, maxEreco=1000, Scramble
             Resp[nu_type] = H*norm
     return Resp      
 
+##---------------------------------------------##
+##Interpolation on a dense precomputed response matrix
+##Required:
+##  -  MCset: id of MC sample (1000, 1122, ...)
+##  -  Bin: binning scheme
+##  -  Scramble: if scrambling the Right Ascension
+##  -  logEtrue: if the grid is in log10 Etrue instead of linear Etrue
+##Output:
+##  -  return the interpolated response matrix
+##---------------------------------------------##
 
 def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
     Evaltrue = Bin['true_energy_center']
@@ -240,9 +274,9 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
 
     # Access precomputed response matrix and its grid
     if logEtrue:
-        indict = pkl.load(open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}_logE.pkl".format(MCset), "rb"))
+        indict = pkl.load(open("{}/DetResponse/Resp_MC{}_logE.pkl".format(data_path, MCset), "rb"))
     else:
-        indict = pkl.load(open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}.pkl".format(MCset), "rb"))
+        indict = pkl.load(open("{}/DetResponse/Resp_MC{}.pkl".format(data_path, MCset), "rb"))
     if Scramble:
         Resp = indict["Resp_Scr"]
     else:
@@ -263,10 +297,19 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
     
     return Resp_interpolated
 
+##---------------------------------------------##
+##Histogram of a data sample
+##Required:
+##  -  Bin: binning scheme
+##  -  sample: if scrambling the Right Ascension
+##  -  logEtrue: if the grid is in log10 Etrue instead of linear Etrue
+##Output:
+##  -  return the interpolated response matrix
+##---------------------------------------------##
 
 def DataHist(Bin, sample='burnsample'):
     if sample=='burnsample':
-        dat_dir = "/data/user/niovine/projects/DarkMatter_OscNext/Samples/OscNext/L7/Burnsample/"
+        dat_dir = f"{data_path}/Sample/Burnsample/"
         input_files = []
         # Take all burnsample:
         for year in range(2012, 2021):
@@ -300,10 +343,10 @@ def DataHist(Bin, sample='burnsample'):
     
     Psireco_edges = Bin["reco_psi_edges"]
     Ereco_edges = Bin["reco_energy_edges"]
-    H, v0_edges, v1_edges = np.histogram2d(array_recopsi, array_recoE,
-                            bins = (Psireco_edges, Ereco_edges))
+    H = np.histogram2d(array_recopsi, array_recoE,
+                     bins = (Psireco_edges, Ereco_edges))
 
-    return H
+    return H[0]
 
 
 
@@ -316,9 +359,9 @@ def DataHist(Bin, sample='burnsample'):
 
 
 
-#---------------------------------------------------------------------
-#Define cut on weight
-#---------------------------------------------------------------------
+##---------------------------------------------------------------------
+##Define cut on weight
+##---------------------------------------------------------------------
 def define_weightcut(weight, cut):
     
     H, edges = np.histogram(weight, bins=1000)
@@ -352,7 +395,19 @@ def define_weightcut(weight, cut):
         
     return w_lim
 
-# Compute weights and extract other informations used for evt-by-evt reweight:
+
+##---------------------------------------------##
+##Compute weights and extract other informations used for evt-by-evt reweight
+##Required:
+##  -  MCdict: MC events
+##  -  Spectra: neutrino spectra from DM (dN/dE)
+##  -  Jfactor
+##  -  mass: DM mass
+##  -  maxE: maximum true energy considered for the MC
+##  -  weight_cut: if applying cut on very high weight events
+##Output:
+##  -  array of necessary event weights and other informations
+##---------------------------------------------##
 def ComputeWeight(MCdict, Spectra, Jfactor, mass, maxE=3000, weight_cut=True):
     nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
     pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
@@ -422,6 +477,9 @@ def ComputeWeight(MCdict, Spectra, Jfactor, mass, maxE=3000, weight_cut=True):
         signal_w = np.append(signal_w, weight)
     return array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec
 
+##---------------------------------------------##
+## evt-by-evt reweighting for computation of signal expectation
+##---------------------------------------------##
 def KDE_evtbyevt(MCdict, Spectra, Jfactor, mass, bw_method, Bin, Scramble=False, weight_cut=True, mirror=True):
     array_PID, array_recopsi, array_recoE, signal_w, array_recoRA, array_recoDec = ComputeWeight(MCdict, Spectra, Jfactor, mass, weight_cut=weight_cut)
     # Define PID cut:
@@ -501,6 +559,12 @@ def KDE_evtbyevt(MCdict, Spectra, Jfactor, mass, bw_method, Bin, Scramble=False,
 
     return H/np.sum(kde_weight)*np.sum(weight)
 
+
+
+#############################################################################
+# Central class for computing signal expectation 
+# from true signal flux and detector response from MC
+#############################################################################
 
 class RecoRate:
     """docstring for RecoRate."""
@@ -625,7 +689,7 @@ class RecoRate:
                     print('use directly the precomp grid of response matrix without any interpolation')
                     print('Not recommend for neutrino line since you might miss the monochomatic peak')
                   
-                    respdict = pkl.load(open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}_logE.pkl".format(self.set), "rb"))
+                    respdict = pkl.load(open("{}/DetResponse/Resp_MC{}_logE.pkl".format(data_path, self.set), "rb"))
                     self.bin = respdict['Bin']
                     gridEtrue = np.meshgrid(self.bin['true_psi_center'], self.bin['true_energy_center'], 
                                     self.bin['reco_psi_center'], self.bin['reco_energy_center'], indexing='ij')[1]               

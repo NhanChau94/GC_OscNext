@@ -4,10 +4,15 @@ import sys, os
 import pickle as pkl
 from optparse import OptionParser
 
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DMfit/DMfit")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils")
+base_path=os.getenv('GC_DM_BASE')
+data_path=os.getenv('GC_DM_DATA')
+output_path=os.getenv('GC_DM_OUTPUT')
+
+sys.path.append(f"{base_path}/Utils/")
+sys.path.append(f"{base_path}/Spectra/")
+sys.path.append(f"{base_path}/DetResponse/")
+sys.path.append(f"{base_path}/PDFs/")
+sys.path.append(f"{base_path}/DMfit/DMfit")
 
 from Detector import *
 from Signal import *
@@ -18,6 +23,7 @@ from modeling import PdfBase, Model, Parameter
 from data import DataSet
 from llh import LikelihoodRatioTest
 
+# Function return the TS distribution
 def TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrial, SignalSub=True, Bkgtrial=True, 
                     GPmodel=None, GPinj=None, fixGP=True, null=False):
 
@@ -27,16 +33,25 @@ def TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrial, Signa
     print("Signal sub: {}".format(SignalSub))
     print("Number of trials: {}".format(Ntrial))
     print("parsing value for process: {}".format(process))
-    # Compute DM rate
+
+#############################################################################################################
+#   0 - Define process (annihilation/decay) and binning scheme 
+#
+
     Etrue_max = mass
     if process=='decay': Etrue_max = mass/2.
 
     if Etrue_max < 3000:
         Bin = Std_Binning(Etrue_max, N_Etrue=300)
     else:
+        # OscNext only select events up to ~ 3TeV
         Bin = Std_Binning(3000, N_Etrue=500)
-    Reco = RecoRate(channel, mass, profile, Bin,process=process, type="Resp", spectra='Charon', set=mcfit)
 
+#############################################################################################################
+#   1 - Define Signal expectation object and compute the signal expectation
+#
+
+    Reco = RecoRate(channel, mass, profile, Bin,process=process, type="Resp", spectra='Charon', set=mcfit)
     Reco.Scramble = False
     DMRate = Reco.ComputeRecoRate()
     Reco.ResetAllHists()
@@ -44,12 +59,20 @@ def TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrial, Signa
     DMRateScr=Reco.ComputeRecoRate()
     Reco.ResetAllHists()
 
+#############################################################################################################
+#   2 - Background rate assuming data ~ 10xBurnSample
+#
     # Bkg 
     exposure = 8* 365.*24.* 60.* 60.
     Bkg = ScrambleBkg(Bin, bandwidth="ISJ", oversample=10)
     BurnSample = DataHist(Bin)
     Ndata = 10*np.sum(BurnSample) # expected total number of data after 8 years
     BkgRate = 10*np.sum(BurnSample)*Bkg/(np.sum(Bkg))/(exposure)
+
+
+#############################################################################################################
+#   3 - Create PDF object, fraction parameters, and LLR models
+#
 
     # Signal
     SignalPDF = PdfBase(DMRate.flatten()/np.sum(DMRate.flatten()), name="SignalPDF")
@@ -72,9 +95,8 @@ def TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrial, Signa
     # Assuming the Scr Bkg from burn sample is the atm Bkg
     BkgPDF = PdfBase(BkgRate.flatten()/np.sum(BkgRate.flatten()), name="BkgAtm")
 
-    # The data with the assumption of signal fraction xi_true and galactic fraction gc_true:
+    # Signal fraction parameters in: injection, H1 hypothesis, H0 hypothesis
     dm_inj = Parameter(value=0., limits=(0,1), fixed=True, name="dm_inj")
-
     # use for model fitting:
     dm_H1 = Parameter(value=0., limits=(0,1), fixed=False, name="dm_H1")
     dm_H0 = Parameter(value=0., limits=(0,1), fixed=True, name="dm_H0")
@@ -131,27 +153,25 @@ def TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrial, Signa
             modelH1 = dm_H1* SignalPDF + gc_H1* GPPDF_model + (1-dm_H1-gc_H1)*ScrBkgPDF
 
 
-
+    # Create asimov/median dataset and the LLR model object
     lr = LikelihoodRatioTest(model = modelH1, null_model = modelH0)
     ds = DataSet()
     ds.asimov(Ndata, pseudo_data)
     lr.data = ds
-    if null:
+    if null: # in case H0 and data is signal-free
         pseudo_data.parameters["dm_inj"].value = 0.
         lr.models['H1'].parameters["dm_inj"].value = 0.
         lr.models['H0'].parameters["dm_inj"].value = 0.
         lr.models['H0'].parameters["dm_H0"].value = 0.
         TSdist = np.array([])
         for i in range(Ntrial):
-            # pseudo data as null model
             ds.sample(Ndata, pseudo_data)
             lr.data = ds
             lr.fit('H1')
             lr.fit('H0')
             TSdist = np.append(TSdist, lr.TS)
-    else:
+    else: # assuming 90%CL injection to H0 and data
         ul = lr.upperlimit_llhinterval('dm_H1', 'dm_H0', 90)
-
         if Bkgtrial==True:
             dm_trial = 0.
         else:
@@ -164,7 +184,6 @@ def TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrial, Signa
 
         TSdist = np.array([])
         for i in range(Ntrial):
-            # pseudo data as null model
             ds.sample(Ndata, pseudo_data)
             lr.data = ds
             TSdist = np.append(TSdist, lr.TS_llhinterval(ul, 'dm_H1', 'dm_H0'))
@@ -187,18 +206,18 @@ parser.add_option("-n", "--Ntrials", type = int, action = "store", default = 100
 parser.add_option("-f", "--file", type = "string", action = "store", default = None, metavar  = "<file>", help = "output file",)
 parser.add_option("-b", "--bkgtrial", type = int, action = "store", default = 0, metavar  = "<bkgtrial>", help = "if use bkg trials",)
 
-parser.add_option("-l", "--likelihood",
-                  action="store_true", dest="likelihood", default=False,
+parser.add_option("--signalsub",
+                  action="store_true", dest="signalsub", default=False,
                   help="use signal subtraction likelihood")
 
 parser.add_option("--null",
                   action="store_true", dest="null", default=False,
-                  help="compute -2LLR for null hypothesis i.e: TS(0|0), otherwise compute TS for the case of loglikelihood interval")                  
+                  help="compute -2LLR for null hypothesis i.e: TS(0|0), otherwise compute TS for the checking case of loglikelihood interval")                  
 
 
 parser.add_option("--GPmodel", type = "string", action = "store", default = None, metavar  = "<GPmodel>", help = "GP model in the fit, use among: pi0, pi0_IC, KRA50, KRA50_IC, KRA5, KRA5_IC, None",)
 parser.add_option("--GPinject", type = "string", action = "store", default = None, metavar  = "<GPinject>", help = "GP model used for injection, use amog:  pi0, pi0_IC, KRA50, KRA50_IC, KRA5, KRA5_IC, None",)
-parser.add_option("--fixGP", type = int, action = "store", default = 1, metavar  = "<fixGP>", help = "in case of including GP, fix it (1) or fit/marginalize it (0)",)
+parser.add_option("--fixGP", type = int, action = "store", default = 1, metavar  = "<fixGP>", help = "in case of including GP, fix its fraction (1) or fit/marginalize it (0)",)
 
 
 
@@ -211,7 +230,7 @@ profile = options.profile
 mcfit = options.mcfit
 mcinj = options.mcinj
 Ntrials = options.Ntrials
-likelihood = options.likelihood
+signalsub = options.signalsub
 file = options.file
 bkgtrial = options.bkgtrial
 process=options.process
@@ -220,13 +239,13 @@ GPmodel = options.GPmodel
 GPinject = options.GPinject
 fixGP = options.fixGP
 
-TS = TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrials, SignalSub=likelihood, Bkgtrial=bool(bkgtrial), GPmodel=GPmodel, GPinj=GPinject, fixGP=bool(fixGP), null=null)
+TS = TS_distribution(mass, channel, profile, process, mcfit, mcinj, Ntrials, SignalSub=signalsub, Bkgtrial=bool(bkgtrial), GPmodel=GPmodel, GPinj=GPinject, fixGP=bool(fixGP), null=null)
 
 
 if null==False:
-    path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/TSdist/TSdist_{}_{}_{}_{}_MCfit{}_Mcinj{}_SignalSubtraction{}_BkgTrial{}'.format(channel, mass, process, profile, mcfit, mcinj, likelihood, bkgtrial)
+    path = '{}/TSdist/TSdist_{}_{}_{}_{}_MCfit{}_Mcinj{}_SignalSubtraction{}_BkgTrial{}'.format(output_path, channel, mass, process, profile, mcfit, mcinj, signalsub, bkgtrial)
 else:
-    path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/TSdist/TSdist_{}_{}_{}_{}_MCfit{}_Mcinj{}_SignalSubtraction{}_null'.format(channel, mass, process, profile, mcfit, mcinj, likelihood)
+    path = '{}/TSdist/TSdist_{}_{}_{}_{}_MCfit{}_Mcinj{}_SignalSubtraction{}_null'.format(output_path, channel, mass, process, profile, mcfit, mcinj, signalsub)
 
 if GPinject!=None and GPinject!='None':
     path += f'_GPinject{GPinject}'

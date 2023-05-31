@@ -2,7 +2,7 @@
 author : N. Chau
 Background estimation for GC Dark Matter Search
 """
-import sys
+import sys, os
 import pickle as pkl
 import numpy as np
 import healpy as hp
@@ -11,10 +11,12 @@ from astropy_healpix import HEALPix
 import scipy
 from scipy import integrate
 
-
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs/")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse/")
+base_path=os.getenv('GC_DM_BASE')
+data_path=os.getenv('GC_DM_DATA')
+sys.path.append(f"{base_path}/Utils/")
+sys.path.append(f"{base_path}/Spectra/")
+sys.path.append(f"{base_path}/DetResponse/")
+sys.path.append(f"{base_path}/PDFs/")
 
 from KDE_implementation import *
 from Utils import *
@@ -27,14 +29,12 @@ from Signal import *
 def ScrambleBkg(Bin, sample='burnsample', oversample=10, kde=True, savefile='/data/user/tchau/DarkMatter_OscNext/PDFs/Background/RAScramble_burnsample_FFTkde.pkl',**kwargs):
     # For now only burn sample add a switch to full data later
     if sample=='burnsample':
-        dat_dir = "/data/user/niovine/projects/DarkMatter_OscNext/Samples/OscNext/L7/Burnsample/"
+        dat_dir = f"{data_path}/Sample/Burnsample/"
         input_files = []
         # Take all burnsample:
+        print(f'Loading {dat_dir}')
         for year in range(2012, 2021):
             infile = dat_dir + "OscNext_Level7_v02.00_burnsample_{}_pass2_variables_NoCut.pkl".format(year)
-            print('Loading file: ')
-            print(infile)
-            print('')
             dat = pkl.load(open(infile, 'rb'))
             input_files = np.append(input_files, dat['burnsample'])
     
@@ -111,7 +111,7 @@ def GP_Espectra_pi0(E, scale=1.):
     return f_GP* scale
     
 
-# Functions for decoupled KRA template into energy and spatial part (useful for plotting):
+# Functions for decoupled KRA template into energy and spatial part (similar approach as GP paper):
 # all-sky energy spectra per flavour: GeV-1 cm^-2 s^-2
 def GP_Espectra_KRA(E, template='/data/user/tchau/DarkMatter_OscNext/GP_template/KRA-gamma_maps_energies.tuple.npy', scale=1.):
     KRA = np.load(template, allow_pickle=True, encoding='bytes')
@@ -160,7 +160,7 @@ def GP_SpatialPDF(template='/data/user/tchau/Sandbox/GC_OscNext/Fermi-LAT_pi0_ma
 
 
 #  Compute the reconstruction rate binned in energy and open angle using evt-by-evt reweighted method
-def GP_RecoRate(Bin, template='/data/user/tchau/Sandbox/GC_OscNext/Fermi-LAT_pi0_map.npy', set='1122', scrambled=False, scale=1, kde=False, **kwargs):
+def GP_RecoRate(Bin, template='/data/user/tchau/Sandbox/GC_OscNext/Fermi-LAT_pi0_map.npy', set='1122', scale=1, scrambled=False, seed=1000, kde=False, **kwargs):
 
     # Access the MC:
     MCdict = ExtractMC(['14'+set, '12'+set, '16'+set])
@@ -179,6 +179,7 @@ def GP_RecoRate(Bin, template='/data/user/tchau/Sandbox/GC_OscNext/Fermi-LAT_pi0
     true_Dec = MCdict["Dec_true"]
     reco_Dec = MCdict["Dec_reco"]
     if scrambled==True:
+        np.random.seed(seed)
         reco_RA = np.random.uniform(0,2.*np.pi, size=len(reco_RA))
         reco_psi = np.rad2deg(psi_f(reco_RA, reco_Dec))
 

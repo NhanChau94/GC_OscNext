@@ -6,7 +6,9 @@ import numpy as np
 import pickle as pkl
 import sys, re, os
 
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils/")
+base_path=os.getenv('GC_DM_BASE')
+data_path=os.getenv('GC_DM_DATA')
+sys.path.append(f"{base_path}/Utils/")
 from Utils import *
 ##---------------------------------------------##
 ##Load the MC dictionnary and applied cut
@@ -50,10 +52,6 @@ def ApplyCut(inMC, cut="OscNext", dis_correction=None):
     output_dict["Dec_reco"] = inMC["reco_Dec"][loc]
     output_dict["RA_reco"] = inMC["reco_RA"][loc]
     output_dict["AtmWeight"] = (inMC["AtmWeight"][loc]/inMC["NFiles"])
-    # output_dict["SA_true"] = 2* np.pi *(1-np.cos(np.deg2rad["psi_true"]))
-    # output_dict["SA_reco"] = 2* np.pi *(1-np.cos(np.deg2rad["psi_reco"]))
-
-
 
     # weight
     OW = inMC["OneWeight"][loc]
@@ -91,7 +89,7 @@ def ApplyCut(inMC, cut="OscNext", dis_correction=None):
 
 
 def ExtractMC(sampleid):
-    Simdir="/data/user/tchau/DarkMatter_OscNext/Sample/Simulation"
+    Simdir=f"{data_path}/Sample/Simulation"
     # Extract Simulation file:
     Cut = dict()
     for sample in sampleid:
@@ -180,189 +178,6 @@ def Std_Binning(ETruemax, N_Etrue = 100, N_psitrue = 50, N_Ereco=50, N_psireco =
 
     return Bin
 
-##---------------------------------------------##
-##Compute effective area
-##Required:
-##  - MC dictionary
-##  - bin edges [true psi, true energy]
-##  - KDE: if using KDE to smooth the function
-##Output:
-##  - histogram of eff area: [i][j]: eff values at bin i, j of true psi and true E
-##---------------------------------------------##
-def EffectiveArea(MCdict, bin, KDE=False):
-
-    psi_edges = bin['true_psi_edges']
-    energy_edges = bin['true_energy_edges']
-
-    psi = MCdict["psi_true"]
-    E = MCdict["E_true"]
-    weight = MCdict["w"]
-    H, v0_edges, v1_edges = np.histogram2d(psi, E,
-                                               bins = (psi_edges, energy_edges),
-                                               weights=weight)
-    Aeff = H
-
-    return Aeff
-
-##---------------------------------------------##
-##Energy Resolution
-##Required:
-##  - MC dictionary
-##  - bin edges [true psi, true energy, reco energy]
-##  - KDE: if using KDE to smooth the function
-##Output:
-##  - histogram of resolution: [i][j][k]: eff values at bin i, j, k of true psi, true E and reco E
-##---------------------------------------------##
-
-def EnergyResolution(MCdict, bin, KDE=False):
-    # nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    # pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
-    truepsi_edges = bin['true_psi_edges']
-    trueenergy_edges = bin['true_energy_edges']
-    recoenergy_edges = bin['reco_energy_edges']
-
-        # loc = np.where(MCdict["nutype"]==pdg_encoding[nu_type])
-    psitrue = MCdict["psi_true"]
-    Etrue = MCdict["E_true"]
-    Ereco = MCdict["E_reco"]
-    Ntot = len(Etrue)
-    H = np.histogramdd((psitrue, Etrue, Ereco),
-                                           bins = (truepsi_edges, trueenergy_edges, recoenergy_edges))
-    Resolution = H[0]/Ntot
-    return Resolution
-
-
-##---------------------------------------------##
-##Psi Resolution
-##Required:
-##  - MC dictionary
-##  - bin edges [true psi, true energy, reco energy]
-##  - KDE: if using KDE to smooth the function
-##Output:
-##  - histogram of resolution: [i][j][k]: eff values at bin i, j, k of true E, true psi and reco psi
-##---------------------------------------------##
-
-def PsiResolution(MCdict, bin, KDE=False):
-    # nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    # pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
-    truepsi_edges = bin['true_psi_edges']
-    trueenergy_edges = bin['true_energy_edges']
-    recopsi_edges = bin['reco_psi_edges']
-
-    psitrue = MCdict["psi_true"]
-    Etrue = MCdict["E_true"]
-    psireco = MCdict["psi_reco"]
-    Ntot = len(Etrue)
-    H, v0_edges, v1_edges, v2_edges = np.histogramdd((Etrue, psitrue, psireco),
-                                           bins = (trueenergy_edges, truepsi_edges, recopsi_edges))
-    Resolution = H/Ntot
-    return Resolution
-
-
-##---------------------------------------------##
-##PID probability
-##Required:
-##  - MC dictionary
-##  - bin edges [true psi, true energy, reco energy]
-##  - KDE: if using KDE to smooth the function
-##Output:
-##  - histogram of PID prob: [i][j][k]: values at bin i, j ,k as: PID, true psi and true E
-##---------------------------------------------##
-
-def PIDprob(MCdict, bin, KDE=False):
-    psi_edges = bin['true_psi_edges']
-    energy_edges = bin['true_energy_edges']
-    PID_edges = bin['PID_edges']
-
-    psi = MCdict["psi_true"]
-    E = MCdict["E_true"]
-    PID = MCdict["PID"]
-    Ntot = len(E)
-    PIDprob, v0_edges, v1_edges = np.histogram2d(PID, psi, E,
-                                            bins = (PID_edges, psi_edges, energy_edges))
-    return PIDprob/Ntot
-
-
-##---------------------------------------------##
-##Make detector response functions
-##Required:
-##  - MC dictionary
-##  - bin edges [true psi, true energy, reco energy]
-##  - KDE: if using KDE to smooth the function
-##Output:
-##  - dictionary of response function: [nutype][functions]
-##---------------------------------------------##
-
-
-def MakeResponseFunctions(MCdict, bin, outfile, KDE=False):
-    # Apply cuts on MC:
-    MCcut = ApplyCut(MCdict)
-
-    # Doing response functions for each neutrino and interaction type:
-    nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-
-    Resp = dict()
-    Resp['Bin'] = bin
-
-    for nu_type in nu_types:
-        loc = np.where(MCdict["nutype"]==pdg_encoding[nu_type])
-        MC_nutype = MCdict[loc]
-        Resp[nu_type]['Aeff'] = EffectiveArea(MC_nutype, bin, KDE)
-        Resp[nu_type]['Eres'] = EnergyResolution(MC_nutype, bin, KDE)
-        Resp[nu_type]['Psires'] = PsiResolution(MC_nutype, bin, KDE)
-        Resp[nu_type]['PIDprob'] = PIDprob(MC_nutype, bin, KDE)
-
-    pkl.dump(Resp,open(outfile ,"wb"))
-    return Resp
-
-##---------------------------------------------##
-##Make one correlated response matrix
-##Required:
-##  - MC dictionary
-##  - binning
-##  - KDE: if using KDE to smooth the function
-##Output:
-##  - dictionary of response matrix as: [nutype][truePsi][trueE][PID][recoPsi][recoE]
-##---------------------------------------------##
-def MakeResponseMatrix(MCcut, bin, outfile, KDE=False):
-    # Apply cuts on MC:
-    # MCcut = ApplyCut(MCdict)
-
-    # Binning:
-    truepsi_edges = bin['true_psi_edges']
-    trueenergy_edges = bin['true_energy_edges']
-
-    recopsi_edges = bin['reco_psi_edges']
-    recoenergy_edges = bin['reco_energy_edges']
-    PIDedges = bin['PID_edges']
-
-
-    # Doing response functions for each neutrino and interaction type:
-    nu_types = ["nu_e", "nu_mu", "nu_tau", "nu_e_bar", "nu_mu_bar", "nu_tau_bar"]
-    pdg_encoding = {"nu_e":12, "nu_mu":14, "nu_tau":16, "nu_e_bar":-12, "nu_mu_bar":-14, "nu_tau_bar":-16}
-    RespMatrix = dict()
-    RespMatrix['Bin'] = bin
-    for nu_type in nu_types:
-        loc = np.where(MCcut["nutype"]==pdg_encoding[nu_type])
-        # MC_nutype = MCcut[loc]
-
-        psitrue = MCcut["psi_true"][loc]
-        Etrue = MCcut["E_true"][loc]
-        psireco = MCcut["psi_reco"][loc]
-        Ereco = MCcut["E_reco"][loc]
-        PIDscore = MCcut["PID"][loc]
-        w = MCcut["w"][loc]
-        # Response matrix for each nutype:
-        Resp = np.histogramdd((psitrue, Etrue, PIDscore, psireco, Ereco),
-                                            bins = (truepsi_edges, trueenergy_edges, 
-                                                    PIDedges, recopsi_edges, recoenergy_edges), 
-                                            weights=w)
-        RespMatrix[nu_type] = np.array(Resp[0])                                    
-    pkl.dump(RespMatrix, open(outfile, "wb"))                                        
-    return RespMatrix
 
 
 ##---------------------------------------------##

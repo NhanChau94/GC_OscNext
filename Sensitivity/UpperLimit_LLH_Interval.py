@@ -1,15 +1,18 @@
 #!/usr/bin/env /cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/RHEL_7_x86_64/bin/python
 
-import sys
+import sys, os
 import numpy as np
 import pickle as pkl
 from optparse import OptionParser
 
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DMfit/DMfit")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/PDFs")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/DetResponse")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Utils")
-sys.path.append("/data/user/tchau/Sandbox/GC_OscNext/Spectra")
+base_path=os.getenv('GC_DM_BASE')
+data_path=os.getenv('GC_DM_DATA')
+output_path=os.getenv('GC_DM_OUTPUT')
+sys.path.append(f"{base_path}/Utils/")
+sys.path.append(f"{base_path}/Spectra/")
+sys.path.append(f"{base_path}/DetResponse/")
+sys.path.append(f"{base_path}/PDFs/")
+sys.path.append(f"{base_path}/DMfit/DMfit")
 
 
 from Detector import *
@@ -21,16 +24,25 @@ from modeling import PdfBase, Model, Parameter
 from data import DataSet
 from llh import LikelihoodRatioTest
 
-def UpperLimit(DMRate, DMRateScr, ScrBkgPDF, DataPDF, Ndata, GPmodel='None',
-               llh="SignalSub", exposure= 2933.8*24*60*60, sampling=False, process='ann', fixGP=True):
 
-    # Create the PDF object
+#############################################################################################################
+#   Compute upper limit from DM expectation, Scramble Bkg and Data
+#
+def UpperLimit(DMRate, DMRateScr, ScrBkgPDF, DataPDF, Ndata, GPmodel='None',
+               llh="SignalSub", exposure= 9.3* 365.25 *24*60*60, sampling=False, process='ann', fixGP=True):
+
+    #############################################################################################################
+    #   Create the signal PDF and itinitiate signal fraction parameter
+    #
+
     SignalPDF = PdfBase(DMRate.flatten()/np.sum(DMRate.flatten()), name="SignalPDF")
-    ScrSignalPDF = PdfBase(DMRateScr.flatten()/np.sum(DMRateScr.flatten()), name="ScrSignalPDF")
-      
+    ScrSignalPDF = PdfBase(DMRateScr.flatten()/np.sum(DMRateScr.flatten()), name="ScrSignalPDF")     
     dm_H1 = Parameter(value=0., limits=(0,1), fixed=False, name="dm_H1")
     dm_H0 = Parameter(value=0., limits=(0,1), fixed=True, name="dm_H0")
 
+    #############################################################################################################
+    #   In case of including Galactic Plane in the LLR
+    #
     if GPmodel!=None and GPmodel!='None':
         scales = {'pi0':1, 'pi0_IC':4.95, 'KRA50':1., 'KRA50_IC':0.37, 'KRA5':1., 'KRA5_IC':0.55}
         template = {'pi0':'Fermi-LAT_pi0_map.npy', 'pi0_IC':'Fermi-LAT_pi0_map.npy', 
@@ -63,7 +75,9 @@ def UpperLimit(DMRate, DMRateScr, ScrBkgPDF, DataPDF, Ndata, GPmodel='None',
             modelH0 = dm_H0* SignalPDF + (1-dm_H0)*ScrBkgPDF
             modelH1 = dm_H1* SignalPDF + (1-dm_H1)*ScrBkgPDF
 
-
+    #############################################################################################################
+    #   Create LLR models, parsing the data set (asimov or resampling) then compute 90%CL limit of signal fraction
+    #
     lr = LikelihoodRatioTest(model = modelH1, null_model = modelH0)
     data = DataSet()
     if sampling==False:
@@ -97,19 +111,23 @@ parser.add_option("-c", "--channel", type = "string", action = "store", default 
 parser.add_option("-p", "--profile", type = 'string', action = "store", default = "NFW", metavar  = "<profile>", help = "GC profile",)
 parser.add_option("--process", type = 'string', action = "store", default = "decay", metavar  = "<process>", help = "process: ann or decay",)
 parser.add_option("-s", "--spectra", type = 'string', action = "store", default = "Charon", metavar  = "<spectra>", help = "Spectra: Charon or PPPC4",)
-parser.add_option("--mc", type = 'string', action = "store", default = "0000", metavar  = "<spectra>", help = "MC set",)
-parser.add_option("-b", "--bkg", type = 'string', action = "store", default = "FFT", metavar  = "<bkg>", help = "Background type: FFT with ISJ or sklearn with CV bandwidth",)
-parser.add_option("-m", "--mass", type = float, action = "store", default = None, metavar  = "<mass>", help = "mass values: in case of specify only one value of mass will be input",)
-parser.add_option("-u", "--up", type = float, action = "store", default = 100, metavar  = "<up>", help = "Dark Matter mass up",)
-parser.add_option("-l", "--low", type = float, action = "store", default = 1, metavar  = "<low>", help = "Dark Matter mass low",)
-parser.add_option("-n", "--n", type = int, action = "store", default = 100, metavar  = "<n>", help = "Dark Matter mass - N point scan",)
-parser.add_option("--nsample", type = int, action = "store", default = 0, metavar  = "<nsample>", help = "Sampling to make brazillian plot: 0 = no sampling",)
+parser.add_option("--mc", type = 'string', action = "store", default = "1122", metavar  = "<spectra>", help = "MC set",)
+parser.add_option("-b", "--bkg", type = 'string', action = "store", default = "precomp", metavar  = "<bkg>", 
+                  help = "Background type: FFT with ISJ, sklearn with CV bandwidth (both with new seed each time running) or the precomputed one used for the wikipage result",)
+parser.add_option("-u", "--up", type = float, action = "store", default = 100, metavar  = "<up>", help = "Dark Matter mass upper value for scanning",)
+parser.add_option("-l", "--low", type = float, action = "store", default = 100, metavar  = "<low>", help = "Dark Matter mass lower value for scanning",)
+parser.add_option("-n", "--n", type = int, action = "store", default = 1, metavar  = "<n>", help = "# of point scan on DM mass from defined lower to upper value",)
+parser.add_option("--nsample", type = int, action = "store", default = 0, metavar  = "<nsample>", help = "# of sampling to make brazillian plot: 0 = no sampling and use Asimov dataset",)
 parser.add_option("--errorJ", type = 'string', action = "store", default = "nominal", metavar  = "<errorJ>", help = "Variance on Jfactor from Nesti&Salucci: nominal, errors1, errors2",)
 parser.add_option("--exposure", type = float, action = "store", default = 9.3* 365.25 *24*60*60, metavar  = "<exposure>", help = "exposure time (default: 9.3 years)",)
 
-parser.add_option("--gcinj", type = 'string', action = "store", default = 'None', metavar  = "<gcinj>", help = "if gc is injected (0:no, 1:yes)",)
-parser.add_option("--gcmodel", type = 'string', action = "store", default = 'None', metavar  = "<gcmodel>", help = "if gc is accounted in the fit model (0:no, 1:yes)",)
-parser.add_option("--fixGP", type = int, action = "store", default = 1, metavar  = "<fixGP>", help = "in case of including GP, fix it (1) or fit/marginalize it (0)",)
+parser.add_option("--gcinj", type = 'string', action = "store", default = 'None', metavar  = "<gcinj>", help = "GP astro injection, use among: pi0, pi0_IC, KRA50, KRA50_IC, KRA5, KRA5_IC, None",)
+parser.add_option("--gcmodel", type = 'string', action = "store", default = 'None', metavar  = "<gcmodel>", help = "GP astro in the LLR, use among: pi0, pi0_IC, KRA50, KRA50_IC, KRA5, KRA5_IC, None",)
+parser.add_option("--fixGP", type = int, action = "store", default = 1, metavar  = "<fixGP>", help = "in case of including GP, fix its fraction (1) or fit/marginalize it (0)",)
+
+parser.add_option("--mass_default",
+                  action="store_true", dest="mass_default", default=False,
+                  help="Set mass scan values to the default used for the analysis as indicated in the wikipage")  
 
 (options, args) = parser.parse_args()
 
@@ -128,15 +146,24 @@ exposure = options.exposure
 fixGP = options.fixGP
 GPinj = options.gcinj
 GPmodel = options.gcmodel
+mass_default = options.mass_default
 
-print(process)
-print(profile)
-print(channel)
-print(nsample)
+#############################################################################################################
+#   0 - Defined default mass range for each channels
+#
+if mass_default:
+    if process=='ann':
+        masses = {"WW":[90, 8000], "bb":[15, 8000], 'tautau':[5, 4000], 'mumu':[5, 1000], "nuenue":[5, 200],"numunumu":[5, 200],"nutaunutau":[5,200]}
+    elif process=='decay':    
+        masses = {"WW":[180, 8000], "bb":[30, 8000], 'tautau':[5, 8000], 'mumu':[5, 2000], "nuenue":[5, 400],"numunumu":[5, 400],"nutaunutau":[5,400]}
+    up = masses[channel][1]
+    low = masses[channel][0]
+    n = 30
 
-
+#############################################################################################################
+#   1 -  Binning scheme, Signal expectation object, Bkg PDF, Galactic Plane injection if considered
+#
 Bin = Std_Binning(300, N_Etrue=100)
-# Reco = RecoRate(channel, 300, profile, Bin, process=process,type="Resp", spectra='Charon', set=mc)
 Reco = RecoRate(channel, 300, profile, Bin, process=process,type="Resp", spectra='Charon', set=mc)
 
 if bkg=='FFT':
@@ -144,18 +171,19 @@ if bkg=='FFT':
 elif bkg=='sklearn':
     Bkg = ScrambleBkg(Bin, bandwidth=0.03, method='sklearn' ,oversample=10)
 elif bkg=='precomp':
+    # A precomputed with a stored seed -> advised to used
     loadpdf = pkl.load(open('/data/user/tchau/DarkMatter_OscNext/PDFs/Background/RAScramble_burnsample_FFTkde.pkl', 'rb'))
     Bkg = loadpdf['pdf']
 
 BurnSample = DataHist(Bin)
-Ndata = 10*np.sum(BurnSample) # expected total number of data after 8 years
+Ndata = 10*np.sum(BurnSample) # expected total number of data as 10* BurnSample
 
 # Assuming the Scr Bkg from burn sample is the atm Bkg
 BkgPDF = PdfBase(Bkg.flatten()/np.sum(Bkg.flatten()), name="BkgAtm")
 
 
-# in case including GP in the model:
-# Different models for GP
+# in case injecting GP to the data:
+# Different models for GP:
 scales = {'pi0':1, 'pi0_IC':4.95, 'KRA50':1., 'KRA50_IC':0.37, 'KRA5':1., 'KRA5_IC':0.55}
 template = {'pi0':'Fermi-LAT_pi0_map.npy', 'pi0_IC':'Fermi-LAT_pi0_map.npy', 
                 'KRA50':'KRA-gamma_maps_energies.tuple.npy', 'KRA50_IC':'KRA-gamma_maps_energies.tuple.npy', 
@@ -176,10 +204,10 @@ if GPinj!=None and GPinj!='None':
 
 else:
     f = Parameter(value=1., limits=(0,1), fixed=True, name="factor")
-
     DataPDF = f*BkgPDF
     ScrBkgPDF = f*BkgPDF
 
+# in case resampling to make brazillian plot
 if nsample!=0:
         median = np.array([])    
         low1 = np.array([])  
@@ -190,38 +218,42 @@ else:
     UL = np.array([])
     fraction = np.array([])
 
-# Manually load Jfactor in case for the error is considered:
+# Manually load the error Jfactor in case it is considered:
 if errorJ!='nominal':
     MyJ = Jf(profile=profile, process=process)
     J_Clumpy = MyJ.Jfactor_Clumpy(errors=errorJ)
     J_int = Interpolate_Jfactor(J_Clumpy, Bin['true_psi_center'])
     
 
+#############################################################################################################
+#   2 -  scan mass range, 
+#        for each mass compute corresponing signal PDF and pass to the LLR model for limit estimation
+#
 masses = np.exp(np.linspace(np.log(low), np.log(up), n))
 for mass in masses:
-    # Bin
     if process=='ann': Etrue_max = mass
     if process=='decay': Etrue_max = mass/2.
 
-    # if Etrue_max < 3000:
-    #     Bin = Std_Binning(Etrue_max, N_Etrue=300)
-    # else:
-    #     Bin = Std_Binning(3000, N_Etrue=500)
-    
-    if Etrue_max < 2000:
+    if Etrue_max < 3000:
         Bin = Std_Binning(Etrue_max, N_Etrue=300)
     else:
-        Bin = Std_Binning(2000, N_Etrue=500)
-
-    Reco.mass = mass
-    Reco.bin = Bin
+        Bin = Std_Binning(3000, N_Etrue=500)
     
+    # if Etrue_max < 2000:
+    #     Bin = Std_Binning(Etrue_max, N_Etrue=300)
+    # else:
+    #     Bin = Std_Binning(2000, N_Etrue=500)
+
+    # Signal PDF
+    Reco.mass = mass
+    Reco.bin = Bin    
     Reco.Scramble = False
     if errorJ!='nominal':
         Reco.hist['Jfactor'] = J_int
     Rate = Reco.ComputeRecoRate()
     Reco.ResetAllHists()
 
+    # Scrambled Signal PDF
     Reco.Scramble = True
     if errorJ!='nominal':
         Reco.hist['Jfactor'] = J_int
@@ -230,11 +262,13 @@ for mass in masses:
 
 
     if nsample==0:
+        # Asimov dataset
         limit, frac = UpperLimit(Rate, Rate_Scr, ScrBkgPDF, DataPDF, Ndata, GPmodel=GPmodel,
             exposure=exposure, sampling=False, process=process, fixGP=bool(fixGP)) 
         UL = np.append(UL, limit)
         fraction = np.append(fraction, frac)
     else:
+        # resampling to produce brazillian bands
         UL_dist = np.array([])
         for i in range(nsample):
             UL_dist = np.append(UL_dist, UpperLimit(Rate, Rate_Scr, ScrBkgPDF, DataPDF, Ndata, GPmodel=GPmodel,
@@ -243,7 +277,6 @@ for mass in masses:
         arr2 = np.percentile(UL_dist, [16, 50, 84])
 
         #Compute 1 and 2 sigma bands
-
         median = np.append(median, arr1[1])
         low1 = np.append(low1, arr1[0])
         up1 = np.append(up1, arr1[2])
@@ -255,9 +288,9 @@ outdict = dict()
 outdict['mass'] = masses
 if nsample==0:
     if errorJ=='nominal':
-        path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/UpperLimit/{}_{}_{}_{}points_MC{}_BKG{}_gcinj{}_gcmodel{}_fixgc{}.pkl'.format(process, channel, profile, n, mc, bkg, GPinj, GPmodel, fixGP)
+        path = '{}/UpperLimit/{}_{}_{}_{}points_MC{}_BKG{}_gcinj{}_gcmodel{}_fixgc{}.pkl'.format(output_path, process, channel, profile, n, mc, bkg, GPinj, GPmodel, fixGP)
     else:
-        path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/UpperLimit/{}_{}_{}_{}points_MC{}_BKG{}_Jfactor{}_fixgc{}.pkl'.format(process, channel, profile, n, mc, bkg, errorJ, fixGP)
+        path = '{}/UpperLimit/{}_{}_{}_{}points_MC{}_BKG{}_Jfactor{}_fixgc{}.pkl'.format(output_path, process, channel, profile, n, mc, bkg, errorJ, fixGP)
         
     outdict['UL'] = UL
     outdict['fraction'] = fraction
@@ -268,7 +301,7 @@ if nsample==0:
     print('signal fraction:{}'.format(fraction))
     print('='*20)
 else:
-    path = '/data/user/tchau/DarkMatter_OscNext/Sensitivity/UpperLimit/{}_{}_{}_{}points_MC{}_BKG{}_nsample{}_gcinj{}_gcmodel{}_fixgc{}.pkl'.format(process, channel, profile, n, mc, bkg, nsample, GPinj, GPmodel, fixGP)
+    path = '{}/UpperLimit/{}_{}_{}_{}points_MC{}_BKG{}_nsample{}_gcinj{}_gcmodel{}_fixgc{}.pkl'.format(output_path, process, channel, profile, n, mc, bkg, nsample, GPinj, GPmodel, fixGP)
 
     outdict['median'] = median
     outdict['16'] = low1
