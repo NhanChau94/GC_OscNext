@@ -7,7 +7,9 @@ Galactic Center DM search with IceCube using OscNext event selection.
 - [`KDEpy`](https://github.com/tommyod/KDEpy): for performing FFTKDE - a very fast convolution-based kde estimation
 - [`χarον (charon)`](https://github.com/icecube/charon): an IceCube package to organize calculations of neutrinos from dark matter annihilation/decay.
 
-This code has been tested on IceCube's computing cluster in Madison with the CVMFS environment: `eval `/cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/setup.sh`` (Python 3.10.2)
+This code has been tested on IceCube's computing cluster in Madison with the CVMFS environment: 
+
+`eval /cvmfs/icecube.opensciencegrid.org/py3-v4.2.1/setup.sh` (Python 3.10.2)
 ## Structure of the code
 Each directories contain scripts for following purposes:
 - DMfit: package to perform likelihood method for Dark Matter searches in IceCube
@@ -24,6 +26,7 @@ Each directories contain scripts for following purposes:
   - `SignalRecovery.py`: signal recovery fit
   - `TS_distribution.py`: Test statistics distribution
   - `UpperLimit_LLH_Interval.py`: upper limit calculation using likelihood interval method
+    - run `./[script].py --h` to see all available options
   - In case needed: `TS_submit.ipynb`, `UL_submit.ipynb`, `SignalRecovery_submit.ipynb` are used to create the necessary files for submitting jobs to Madison cluster. 
   * The results of these scripts should be store in `GC_DM_OUTPUT` and the corresponding plots can be made using `./PlotScripts/Sensitivity.ipynb`
 
