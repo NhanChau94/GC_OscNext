@@ -301,10 +301,9 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
 ##Histogram of a data sample
 ##Required:
 ##  -  Bin: binning scheme
-##  -  sample: if scrambling the Right Ascension
-##  -  logEtrue: if the grid is in log10 Etrue instead of linear Etrue
+##  -  sample: burn sample or full data
 ##Output:
-##  -  return the interpolated response matrix
+##  -  return data histogram
 ##---------------------------------------------##
 
 def DataHist(Bin, sample='burnsample'):
@@ -314,9 +313,6 @@ def DataHist(Bin, sample='burnsample'):
         # Take all burnsample:
         for year in range(2012, 2021):
             infile = dat_dir + "OscNext_Level7_v02.00_burnsample_{}_pass2_variables_NoCut.pkl".format(year)
-            print('Loading file: ')
-            print(infile)
-            print('')
             dat = pkl.load(open(infile, 'rb'))
             input_files = np.append(input_files, dat['burnsample'])
     
