@@ -65,7 +65,8 @@ def kde_FFT(x, x_grid, bandwidth=0.03, weights=None, logscale=None):
         print('bandwidth: {}'.format(bw))
         y = FFTKDE(bw=bw, kernel='gaussian').fit(x, weights=weights).evaluate(x_grid)
 
-    else:    
+    else:
+        print('bandwidth: {}'.format(bandwidth))
         y = FFTKDE(bw=bandwidth, kernel='gaussian').fit(x, weights=weights).evaluate(x_grid)
 
     return y
@@ -150,6 +151,21 @@ def kde_reco(array_recopsi, array_recoE, Bin, weights=None, method='FFT', bandwi
 
         if mirror:
             print('apply reflection at psi=0')    
+                        
+                        
+            if bandwidth=='ISJ':
+                # 1 bandwidth for all dimensions
+                n = psiE_train.T.shape[1]
+                xdata = psiE_train.flatten()
+                if weights is not None:
+                    w = np.array([])
+                    for i in range(n):
+                        w = np.append(w, weights)
+                    bw = improved_sheather_jones(np.array([xdata]).T, weights=w)
+                else:
+                    bw = improved_sheather_jones(np.array([xdata]).T)
+                bandwidth=bw
+
             psiE_train=MirroringData(psiE_train, {0:0})
             # extend grid point to contain the mirror data
             recoPsieval_width = recoPsieval[1] - recoPsieval[0]
@@ -160,6 +176,7 @@ def kde_reco(array_recopsi, array_recoE, Bin, weights=None, method='FFT', bandwi
             psi_eval_reco = g_psi_reco.flatten()
             E_eval_reco = g_energy_reco.flatten()
             psiE_eval = np.vstack([psi_eval_reco, np.log10(E_eval_reco)])   
+
 
         # if (np.max(psiE_eval[0])<np.max(psiE_train[0])): print('psi max range not cover data')
         # if (np.min(psiE_eval[0])>np.min(psiE_train[0])): 

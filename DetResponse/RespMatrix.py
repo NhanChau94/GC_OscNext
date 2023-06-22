@@ -67,7 +67,7 @@ def RespMatrix_FFTkde(MCcut, Bin, mirror=True, Scramble=False, weight_cut=True):
     # PID = [[0.,0.5],[0.5, 0.85],[0.85, 1]]
     PID = [[0.,1.]]
     Resp = dict()
-    pidbin = 0
+    # pidbin = 0
     for pid in PID:
         print("Computing {} PID bin".format(pid))
         # Resp[pidbin] = dict()
@@ -87,8 +87,8 @@ def RespMatrix_FFTkde(MCcut, Bin, mirror=True, Scramble=False, weight_cut=True):
 
             loc = np.where(  (MCcut["nutype"]==pdg_encoding[nu_type]) & (MCcut["PID"]>=pid[0])
                             & (MCcut["PID"]<pid[1]) 
-                            & (MCcut["E_reco"] < 1000)
-                            & (MCcut["E_reco"] > np.min(Bin["reco_energy_center"]))
+                            & (MCcut["E_reco"] < np.max(Bin["reco_energy_edges"]))
+                            & (MCcut["E_reco"] > np.min(Bin["reco_energy_edges"]))
                             & (MCcut["E_true"] < 3100)
                             & (MCcut["E_true"] > 0.95)
                             #np.min(Bin["true_energy_center"]))
@@ -151,11 +151,11 @@ def RespMatrix_FFTkde(MCcut, Bin, mirror=True, Scramble=False, weight_cut=True):
 
             print("Evaluating KDE.....")    
 
-            kde_w = kde_FFT(psiE_train.T, psiE_eval.T, bandwidth='ISJ', weights=w)
-            #Needs to be divided by evaluation angle
-            # kde_weight = kde_w.reshape(psi_eval_true.shape)
-            # kde_weight = kde_w/(psi_eval_true * psi_eval_reco)
-            kde_weight = kde_w
+            kde_weight = kde_FFT(psiE_train.T, psiE_eval.T, bandwidth='ISJ', weights=w)
+            # Set negative weight caused by sparse MC region to 0 
+            # -> acceptable if the effect of the low stat MC region is negligible
+            loc = np.where(kde_weight<0)
+            kde_weight[loc] = 0.
                                     
             # Fill into histogram:
             Psitrue_edges = Bin["true_psi_edges"]
@@ -177,14 +177,15 @@ def RespMatrix_FFTkde(MCcut, Bin, mirror=True, Scramble=False, weight_cut=True):
                 norm = np.sum(w)/(2*np.sum(H))
             else:
                 norm = np.sum(w)/np.sum(H) 
-            Resp[nu_type] = H*norm
-    return Resp
+            Resp[nu_type] = H*norm # normalize to the total weight of MC events in the considered region
+            total_weight = np.sum(w)
+    return Resp, total_weight
 
 
 from optparse import OptionParser
 parser = OptionParser()
 # i/o options
-parser.add_option("-s", "--set", type = "string", action = "store", default = "0000", metavar  = "<set>", help = "MC set",)
+parser.add_option("-s", "--set", type = "string", action = "store", default = "1122", metavar  = "<set>", help = "MC set",)
 
 (options, args) = parser.parse_args()
 
@@ -198,10 +199,11 @@ Etrue_center = np.array([np.sqrt(Etrue_edges[i]*Etrue_edges[i+1]) for i in range
 Bin['true_energy_center']=Etrue_center
 Bin['true_energy_edges']=Etrue_edges
 
-Resp = RespMatrix_FFTkde(MCcut, Bin)
-Resp_Scr = RespMatrix_FFTkde(MCcut, Bin, Scramble=True)
+Resp, total_weight = RespMatrix_FFTkde(MCcut, Bin)
+Resp_Scr = RespMatrix_FFTkde(MCcut, Bin, Scramble=True)[0]
 outdict = dict()
 outdict['Bin'] = Bin
 outdict['Resp'] = Resp
 outdict['Resp_Scr'] = Resp_Scr
+outdict['total_weight'] = total_weight
 pkl.dump(outdict, open("/data/user/tchau/DarkMatter_OscNext/DetResponse/Resp_MC{}_logE.pkl".format(set), "wb"))
