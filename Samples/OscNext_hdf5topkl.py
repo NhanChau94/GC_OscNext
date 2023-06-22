@@ -135,8 +135,10 @@ def extract_genie(nutype, set, output):
             if i % int(len(true_E)/10) == 0:
                 print ("%1.f%%" %(i*10/int(len(true_E)/10)))
             #generate random time
-            stime = time.mktime(time.strptime("8/10/2011/00/00/00", '%m/%d/%Y/%H/%M/%S'))
-            etime = time.mktime(time.strptime("7/17/2019/00/00/00", '%m/%d/%Y/%H/%M/%S'))
+            # stime = time.mktime(time.strptime("8/10/2011/00/00/00", '%m/%d/%Y/%H/%M/%S'))
+            # etime = time.mktime(time.strptime("7/17/2019/00/00/00", '%m/%d/%Y/%H/%M/%S'))
+            stime = time.mktime(time.strptime("04/26/2012/00/00/00", '%m/%d/%Y/%H/%M/%S'))
+            etime = time.mktime(time.strptime("01/24/2022/00/00/00", '%m/%d/%Y/%H/%M/%S'))
             eventTime = stime + random.random() * (etime - stime)
             date = time.gmtime(eventTime)
             eventTime_jd = date_to_jd(date[0], date[1], date[2], date[3], date[4], date[5]) #%YYYY,%MM,%DD,%hh,%mm,%ss

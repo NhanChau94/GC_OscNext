@@ -26,19 +26,26 @@ from Signal import *
 #######################################
 # Background as RA Scramble data
 
-def ScrambleBkg(Bin, sample='burnsample', oversample=10, kde=True, savefile='/data/user/tchau/DarkMatter_OscNext/PDFs/Background/RAScramble_burnsample_FFTkde.pkl',**kwargs):
-    # For now only burn sample add a switch to full data later
+def ScrambleBkg(Bin, sample='burnsample', oversample=10, kde=True, seed=1000, data_version='v02.00',savefile='',**kwargs):
+    input_files = []
     if sample=='burnsample':
         dat_dir = f"{data_path}/Sample/Burnsample/"
-        input_files = []
         # Take all burnsample:
-        print(f'Loading {dat_dir}')
+        # print(f'Loading {dat_dir}')
         for year in range(2012, 2021):
             infile = dat_dir + "OscNext_Level7_v02.00_burnsample_{}_pass2_variables_NoCut.pkl".format(year)
             dat = pkl.load(open(infile, 'rb'))
             input_files = np.append(input_files, dat['burnsample'])
+
+    if sample=='data':
+        dat_dir = f"{data_path}/Sample/Data/"
+        # Take all data:
+        # print(f'Loading {dat_dir}')
+        for year in range(12, 22):
+            infile = dat_dir + "data_IC86.{}_level7_{}_pass2.pkl".format(year, data_version)
+            dat = pkl.load(open(infile, 'rb'))
+            input_files = np.append(input_files, dat)
     
-    array_PID = np.array([])
     array_recopsi = np.array([])
     array_recopsi_original = np.array([])
     array_recoE = np.array([])
@@ -46,7 +53,6 @@ def ScrambleBkg(Bin, sample='burnsample', oversample=10, kde=True, savefile='/da
     array_recoRA_original = np.array([])
     array_recoDec = np.array([])
 
-    # input_file = data['burnsample']
     for input_file in input_files:
     # define cut:
         loc = np.where((input_file["L7muon_classifier_up"]>0.4) &
@@ -61,21 +67,19 @@ def ScrambleBkg(Bin, sample='burnsample', oversample=10, kde=True, savefile='/da
                         (input_file["reco_TotalEnergy"]>=1.)&
                         (input_file["reco_TotalEnergy"]<=1000.))
 
-        array_PID = np.append(array_PID, input_file["PID"][loc])
         array_recopsi_original = np.append(array_recopsi_original, input_file["reco_psi"][loc])
         array_recoE = np.append(array_recoE, input_file["reco_TotalEnergy"][loc])
         array_recoDec = np.append(array_recoDec, input_file["reco_Dec"][loc])
         array_recoRA_original = np.append(array_recoRA_original, input_file["reco_RA"][loc])
 
     #Oversample the sample:
-    array_PID = np.tile(array_PID, oversample)
     array_recopsi_original = np.tile(array_recopsi_original, oversample)
     array_recoE = np.tile(array_recoE, oversample)
     array_recoDec = np.tile(array_recoDec, oversample)
     array_recoRA_original = np.tile(array_recoRA_original, oversample)
 
     # Create scramble RA:
-    seed_value = np.random.get_state()[1][0]
+    seed_value = seed
     np.random.seed(seed_value)
     array_recoRA = np.random.uniform(0,2.*np.pi, size=len(array_recoRA_original))
 

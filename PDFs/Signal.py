@@ -94,7 +94,7 @@ def Interpolate_Spectra(spectra, Eval, Emax, cutlow=True):
 
 
 ##---------------------------------------------##
-##Compute the expected rate
+##Compute the expected true rate
 ##Required:
 ##  -  Spectra from Charon (PPPC4)
 ##  -  Jfactor
@@ -306,17 +306,25 @@ def RespMatrix_Interpolated(MCset, Bin, Scramble=False, logEtrue=True):
 ##  -  return data histogram
 ##---------------------------------------------##
 
-def DataHist(Bin, sample='burnsample'):
+def DataHist(Bin, sample='burnsample', data_version='v02.00'):
+    input_files = []
     if sample=='burnsample':
         dat_dir = f"{data_path}/Sample/Burnsample/"
-        input_files = []
         # Take all burnsample:
         for year in range(2012, 2021):
             infile = dat_dir + "OscNext_Level7_v02.00_burnsample_{}_pass2_variables_NoCut.pkl".format(year)
             dat = pkl.load(open(infile, 'rb'))
             input_files = np.append(input_files, dat['burnsample'])
     
-    array_PID = np.array([])
+    if sample=='data':
+        dat_dir = f"{data_path}/Sample/Data/"
+        # Take all burnsample:
+        print(f'Loading {dat_dir}')
+        for year in range(12, 22):
+            infile = dat_dir + "data_IC86.{}_level7_{}_pass2.pkl".format(year, data_version)
+            dat = pkl.load(open(infile, 'rb'))
+            input_files = np.append(input_files, dat)
+
     array_recopsi = np.array([])
     array_recoE = np.array([])
 
@@ -333,7 +341,6 @@ def DataHist(Bin, sample='burnsample'):
                         (input_file["L7_nouter"]<7.5) &
                         (input_file["L7reco_time"]<14500.))
     
-        array_PID = np.append(array_PID, input_file["PID"][loc])
         array_recopsi = np.append(array_recopsi, np.rad2deg(input_file["reco_psi"][loc]))
         array_recoE = np.append(array_recoE, input_file["reco_TotalEnergy"][loc])
     
@@ -747,7 +754,7 @@ class RecoRate:
             # self.hist['RecoRate'] *= (1./(2 * 4*math.pi * self.mass**2)) move this factor to truerate
 
         else:
-            print("ERROR: Choose self.type among evtbyevt, Resp, and Resp_without_interpolation")
+            print("ERROR: Choose self.type among evtbyevt, Resp")
             sys.exit(1)
     
         return self.hist['RecoRate']

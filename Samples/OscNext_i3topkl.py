@@ -171,8 +171,8 @@ def extract_i3(nutype, set, output, listf=None):
             if i % int(len(true_zenith)/10) == 0:
                 print ("%1.f%%" %(i*10/int(len(true_zenith)/10)))
             #generate random time
-            stime = time.mktime(time.strptime("8/10/2011/00/00/00", '%m/%d/%Y/%H/%M/%S'))
-            etime = time.mktime(time.strptime("7/17/2019/00/00/00", '%m/%d/%Y/%H/%M/%S'))
+            stime = time.mktime(time.strptime("04/26/2012/00/00/00", '%m/%d/%Y/%H/%M/%S'))
+            etime = time.mktime(time.strptime("01/24/2022/00/00/00", '%m/%d/%Y/%H/%M/%S'))
             eventTime = stime + random.random() * (etime - stime)
             date = time.gmtime(eventTime)
             eventTime_jd = date_to_jd(date[0], date[1], date[2], date[3], date[4], date[5]) #%YYYY,%MM,%DD,%hh,%mm,%ss
@@ -228,10 +228,17 @@ listf = options.listf
 
 sample = nutype+set
 
+# if listf==None:
+#     output = '/data/user/tchau/DarkMatter_OscNext/Sample/Simulation/OscNext_Level7_v02.00_{}_pass2_variables_NoCut_fromi3.pkl'.format(sample)
+# else:
+#     name = os.path.basename(listf)
+#     output = '/data/user/tchau/DarkMatter_OscNext/Sample/Simulation/{}.pkl'.format(name)
+
+outdir = "/data/user/tchau/Sandbox/OscNext_DM_resource/Simulation"
 if listf==None:
-    output = '/data/user/tchau/DarkMatter_OscNext/Sample/Simulation/OscNext_Level7_v02.00_{}_pass2_variables_NoCut_fromi3.pkl'.format(sample)
+    output = '{}/OscNext_Level7_v02.00_{}_pass2_variables_NoCut_fromi3.pkl'.format(outdir, sample)
 else:
     name = os.path.basename(listf)
-    output = '/data/user/tchau/DarkMatter_OscNext/Sample/Simulation/{}.pkl'.format(name)
+    output = '{}/{}.pkl'.format(outdir, name)
 
 extract_i3(nutype, set, output, listf=listf)
